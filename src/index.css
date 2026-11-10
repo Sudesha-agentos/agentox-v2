@@ -1,0 +1,202 @@
+@import "tailwindcss";
+
+/*
+ * agentox design system. Monochrome.
+ * One grayscale ramp. Meaning is carried by glyph shape, weight and inversion, never hue.
+ * Tokens are documented live at /design.
+ */
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme {
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* surfaces */
+  --color-canvas: var(--canvas);
+  --color-panel: var(--panel);
+  --color-raised: var(--raised);
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  /* lines */
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-line-3: var(--line-3);
+  /* text */
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+  --color-fg-4: var(--fg-4);
+  /* inversion (primary actions, critical states) */
+  --color-inv: var(--inv);
+  --color-inv-fg: var(--inv-fg);
+
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  --text-2xs: 10.5px;
+  --text-xs: 11.5px;
+  --text-sm: 12.5px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+}
+
+/* dark is the default */
+:root,
+[data-theme="dark"] {
+  --canvas: #0b0b0b;
+  --panel: #111111;
+  --raised: #171717;
+  --hover: #1c1c1c;
+  --active: #232323;
+  --line: #1f1f1f;
+  --line-2: #2a2a2a;
+  --line-3: #3a3a3a;
+  --fg: #ededed;
+  --fg-2: #a3a3a3;
+  --fg-3: #737373;
+  --fg-4: #525252;
+  --inv: #ededed;
+  --inv-fg: #0b0b0b;
+  --dot: rgba(255, 255, 255, 0.07);
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --canvas: #fafafa;
+  --panel: #ffffff;
+  --raised: #f5f5f5;
+  --hover: #f0f0f0;
+  --active: #e8e8e8;
+  --line: #ececec;
+  --line-2: #e0e0e0;
+  --line-3: #cfcfcf;
+  --fg: #0b0b0b;
+  --fg-2: #525252;
+  --fg-3: #737373;
+  --fg-4: #a3a3a3;
+  --inv: #0b0b0b;
+  --inv-fg: #fafafa;
+  --dot: rgba(0, 0, 0, 0.07);
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv11";
+  letter-spacing: -0.003em;
+}
+
+::selection {
+  background: var(--fg);
+  color: var(--canvas);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-3) transparent;
+}
+
+:focus-visible {
+  outline: 1px solid var(--fg);
+  outline-offset: 1px;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-feature-settings: "zero", "ss01";
+  letter-spacing: -0.01em;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Dot-grid texture, as used on auth and empty surfaces */
+.dot-grid {
+  background-image: radial-gradient(var(--dot) 1px, transparent 1px);
+  background-size: 14px 14px;
+}
+
+/* Diagonal hatch, used for "paused" and over-budget fills */
+.hatch {
+  background-image: repeating-linear-gradient(135deg, var(--fg-3) 0 1px, transparent 1px 4px);
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+.blink { animation: blink 1.2s ease-in-out infinite; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 0.9s linear infinite; }
+
+@keyframes enter {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+.enter { animation: enter 0.16s ease-out; }
+
+@keyframes row-flash {
+  from { background: var(--active); }
+  to { background: transparent; }
+}
+.row-flash { animation: row-flash 1.6s ease-out; }
+
+@keyframes shimmer {
+  0% { background-position: -300px 0; }
+  100% { background-position: 300px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--raised) 0px, var(--hover) 60px, var(--raised) 120px);
+  background-size: 600px 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blink, .spin, .enter, .row-flash, .skeleton { animation: none; }
+}
+
+/* Marketing motion */
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1), transform 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+.reveal.in {
+  opacity: 1;
+  transform: none;
+}
+html.lenis, html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+.lenis.lenis-stopped { overflow: hidden; }
+
+@keyframes line-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.line-in { animation: line-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .line-in { animation: none; }
+}
