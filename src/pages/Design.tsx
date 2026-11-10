@@ -347,9 +347,9 @@ export function DesignPage() {
               ["Sparkline", "Trend at a glance in metric strips.", <Sparkline values={[3, 5, 4, 7, 6, 9, 8, 11, 9, 12]} className="w-full" height={40} />],
               ["Sweep", "Only on work that is running now.", <div className="sweep flex h-14 w-full items-center gap-2 rounded-xs border border-line px-3 text-xs"><StatusGlyph kind="live" /> Grace is working</div>],
               ["Empty mark", "Generative, so empty states differ.", <div className="flex h-14 items-center"><svg width="44" height="44" viewBox="0 0 56 56" className="text-line-3">{[4, 10, 16, 22].map((inset, i) => <rect key={i} x={inset} y={inset} width={56 - inset * 2} height={56 - inset * 2} fill="none" stroke="currentColor" strokeDasharray={i % 2 ? "2 2" : undefined} />)}<rect x="26" y="26" width="4" height="4" fill="var(--fg-3)" /></svg></div>],
-            ].map(([t, d, demo]) => (
+            ].map(([t, d, sample]) => (
               <div key={t as string} className="bg-panel p-4">
-                <div className="flex h-16 items-center">{demo as ReactNode}</div>
+                <div className="flex h-16 items-center">{sample as ReactNode}</div>
                 <div className="mt-3 text-sm font-medium">{t as string}</div>
                 <p className="mt-0.5 text-xs text-fg-3">{d as string}</p>
               </div>
