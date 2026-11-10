@@ -1,7 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRight, Clock, Copy, Hash, Square } from "lucide-react";
-import { api, isDemoMode } from "@/api/client";
+import { api } from "@/api/client";
 import { useAction, useIssue, useRun, useRunEvents } from "@/api/hooks";
 import type { HeartbeatRunEvent } from "@/api/types";
 import { useCompany } from "@/lib/company";
@@ -52,7 +52,7 @@ export function RunDetailPage() {
   const rawLog = useQuery({
     queryKey: ["c", cid, "run", id, "log"],
     queryFn: () => api.get<{ content: string }>(`/heartbeat-runs/${id}/log?offset=0&limitBytes=256000`),
-    enabled: !isDemoMode() && events.isSuccess && !hasEvents && !active,
+    enabled: events.isSuccess && !hasEvents && !active,
     retry: false,
   });
   const cancel = useAction(() => api.post(`/heartbeat-runs/${id}/cancel`), { cid, success: "Run cancelled" });

@@ -15,7 +15,6 @@ A product page lives at **`/product`** (signed-out visitors land there). The app
 - **Approvals**, **Spend**, **Members** (invites, roles, join requests), **Settings** (workspace, profile, theme, server)
 - **Integrations**: runtimes with a live environment test, model-provider API keys, app connections with health checks, encrypted secrets, personal API keys, and MCP server setup
 - ⌘K command menu, `C` to create a task, dark (default) and light themes, works on mobile
-- **Demo mode**: a full in-browser stand-in for the server API (auth, simulated runs, live events, integrations). Sign in with `demo@agentox.dev` / `agentox-demo`.
 
 ## Run it
 
@@ -37,7 +36,7 @@ The dev server proxies `/api` (including WebSockets) to `AGENTOX_SERVER_URL`, wh
 echo "AGENTOX_SERVER_URL=http://my-host:3100" > .env.local
 ```
 
-If the server isn't reachable, agentox shows a connect screen with a **Try demo** button.
+If the server isn't reachable, agentox shows a connect screen and retries automatically.
 
 ### Production build
 
@@ -72,10 +71,9 @@ Extra arguments are forwarded, for example `npm run server -- doctor` or
 
 | Path | What |
 | --- | --- |
-| `src/api/client.ts` | fetch wrapper, error handling, demo-mode switch |
+| `src/api/client.ts` | fetch wrapper and error handling |
 | `src/api/hooks.ts` | TanStack Query hooks and mutations for every endpoint used |
 | `src/api/types.ts` | the subset of the server's types the UI relies on |
-| `src/api/mock.ts` | demo-mode backend (same routes, simulated runs and live events) |
 | `src/lib/live.tsx` | WebSocket live events, mapped to query invalidation |
 | `src/index.css` | design tokens (grayscale ramp, type scale, radii) |
 | `src/components/ui.tsx` | design-system primitives |

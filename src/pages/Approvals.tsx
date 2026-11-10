@@ -103,7 +103,7 @@ export function ApprovalsPage() {
 
   return (
     <div className="max-w-3xl">
-      <PageHeader
+      <PageHeader index="05"
         title="Approvals"
         description="Decisions agents can't make alone: hires, strategy changes, budget overrides."
         actions={<Segmented value={tab} onChange={setTab} items={[{ value: "open", label: <>Open <span className="mono text-fg-4">{all.filter(isOpen).length}</span></> }, { value: "all", label: "All" }]} />}

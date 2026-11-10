@@ -87,7 +87,7 @@ export function AgentsPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageHeader index="06"
         title="Agents"
         description="Your AI workforce. Each agent runs on a runtime, reports to a manager and spends against a budget."
         actions={

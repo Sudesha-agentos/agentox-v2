@@ -108,7 +108,7 @@ export function MembersPage() {
 
   return (
     <div className="max-w-4xl">
-      <PageHeader
+      <PageHeader index="07"
         title="Members"
         description="People who operate this workspace. Agents are managed separately."
         actions={

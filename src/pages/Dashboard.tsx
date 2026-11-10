@@ -7,14 +7,17 @@ import { useCrumbs } from "@/lib/crumbs";
 import { useAgentMap } from "@/lib/useAgentMap";
 import { useIssueMap } from "@/lib/useIssueMap";
 import { cents, clock, duration, timeAgo, titleCase } from "@/lib/format";
-import { Avatar, Chip, Empty, ErrorBox, Meter, Panel, PanelHeader, Skeleton, StatusGlyph, Table, Td, Th, Tr, cx } from "@/components/ui";
+import { Avatar, Chip, Empty, ErrorBox, Meter, Panel, PanelHeader, Skeleton, Sparkline, StatusGlyph, Table, Td, Th, Tr, cx } from "@/components/ui";
 import { RunStatus, approvalTypeLabel } from "@/components/status";
 
-function Metric({ label, value, foot, to }: { label: string; value: React.ReactNode; foot?: React.ReactNode; to?: string }) {
+function Metric({ label, value, foot, to, spark }: { label: string; value: React.ReactNode; foot?: React.ReactNode; to?: string; spark?: number[] }) {
   const body = (
     <>
       <div className="text-xs text-fg-3">{label}</div>
-      <div className="mono mt-2 text-2xl leading-none font-medium tracking-tight tnum">{value}</div>
+      <div className="mt-2 flex items-end gap-3">
+        <div className="mono text-2xl leading-none font-medium tracking-tight tnum">{value}</div>
+        {spark && <Sparkline values={spark} className="mb-0.5 max-w-24 flex-1" height={20} />}
+      </div>
       <div className="mt-2 min-h-4 text-xs text-fg-3">{foot}</div>
     </>
   );
@@ -40,7 +43,7 @@ function RunChart({ data }: { data: Array<{ date: string; succeeded: number; fai
         action={
           <div className="flex items-center gap-3 text-xs text-fg-3">
             <span className="flex items-center gap-1.5">
-              <span className="size-2 rounded-xs bg-fg-4" /> succeeded <span className="mono text-fg-2">{ok}</span>
+              <span className="dither size-2 rounded-xs border border-fg-3" /> succeeded <span className="mono text-fg-2">{ok}</span>
             </span>
             <span className="flex items-center gap-1.5">
               <span className="hatch size-2 rounded-xs bg-fg" /> failed <span className="mono text-fg-2">{bad}</span>
@@ -62,7 +65,7 @@ function RunChart({ data }: { data: Array<{ date: string; succeeded: number; fai
                 </div>
                 <div className="flex flex-col" style={{ height: `${(total / max) * 100}%`, minHeight: total ? 2 : 0 }}>
                   {d.failed > 0 && <div className="hatch bg-fg" style={{ flex: d.failed }} />}
-                  <div className="bg-fg-4 transition-colors group-hover:bg-fg-3" style={{ flex: d.succeeded }} />
+                  <div className="dither border-t border-fg-3 transition-opacity group-hover:opacity-70" style={{ flex: d.succeeded }} />
                 </div>
                 {total === 0 && <div className="h-px bg-line-3" />}
               </div>
@@ -149,9 +152,14 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-4">
+      <div className="mono flex items-center gap-3 text-2xs tracking-wider text-fg-4 uppercase">
+        <span className="text-fg-3">01</span>
+        <span>Overview</span>
+        <span className="halftone h-2.5 flex-1" aria-hidden />
+      </div>
       <div className="flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-medium tracking-tight">Overview</h1>
+          <h1 className="text-[22px] font-medium tracking-tight">Overview</h1>
           <p className="mt-1 max-w-2xl truncate text-sm text-fg-3">{company.description ?? "Your agent workforce at a glance."}</p>
         </div>
       </div>
@@ -161,8 +169,8 @@ export function DashboardPage() {
         {d ? (
           <>
             <Metric to={`/${cid}/agents`} label="Agents online" value={d.agents.active} foot={<>{d.agents.running} running · {d.agents.paused} paused{d.agents.error ? ` · ${d.agents.error} error` : ""}</>} />
-            <Metric to={`/${cid}/runs`} label="Runs · 24h" value={last24.length} foot={`${liveRuns.length} in flight`} />
-            <Metric to={`/${cid}/runs`} label="Success · 24h" value={rate === null ? "-" : `${rate}%`} foot={`${finished24.length} finished`} />
+            <Metric to={`/${cid}/runs`} label="Runs · 24h" value={last24.length} foot={`${liveRuns.length} in flight`} spark={d.runActivity.slice(-14).map((x) => x.total)} />
+            <Metric to={`/${cid}/runs`} label="Success · 24h" value={rate === null ? "-" : `${rate}%`} foot={`${finished24.length} finished`} spark={d.runActivity.slice(-14).map((x) => (x.succeeded + x.failed ? (x.succeeded / (x.succeeded + x.failed)) * 100 : 0))} />
             <Metric
               to={`/${cid}/spend`}
               label="Spend · month"

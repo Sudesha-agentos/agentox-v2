@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Clock, Coins, Hash, Plus, Zap } from "lucide-react";
 import type { HeartbeatRunEvent } from "@/api/types";
-import { Avatar, Button, Checkbox, Chip, Empty, ErrorBox, Field, Input, Kbd, Mark, Meter, Panel, PanelHeader, Segmented, Select, Status, StatusGlyph, Table, Tabs, Tag, Td, Th, Tr, cx, type Glyph } from "@/components/ui";
+import { Avatar, Button, Checkbox, Chip, Empty, ErrorBox, Field, Identicon, Input, Kbd, Mark, Meter, Panel, PanelHeader, Segmented, Select, Sparkline, Status, StatusGlyph, Table, Tabs, Tag, Td, Th, Tr, cx, type Glyph } from "@/components/ui";
 import { IssueStatusIcon, PriorityIcon, issueStatusMeta, priorityMeta } from "@/components/status";
 import { Transcript } from "@/components/Transcript";
 import { useTheme } from "@/components/Layout";
@@ -335,7 +335,29 @@ export function DesignPage() {
           </Panel>
         </Section>
 
-        <Section n="09" title="Spacing & shape" lede="A 4px base. Radii stay small so the interface reads as a tool, not a toy.">
+        <Section n="09" title="Patterns" lede="Texture without colour. Each pattern has one job, so the interface stays calm: grids locate, dither and hatch encode outcomes, segments measure, and only live work moves.">
+          <div className="grid gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              ["Identicon", "A unique mark per agent, from its name.", <div className="flex gap-2">{["Ada", "Linus", "Grace", "Ken", "Mae"].map((n) => <Identicon key={n} seed={n} size={28} />)}</div>],
+              ["Graph paper", "Behind every page header, fading out.", <div className="grid-paper h-14 w-full rounded-xs border border-line" />],
+              ["Crop marks", "Corner ticks on panels, like a drawing.", <div className="ticks h-14 w-full rounded-xs border border-line" />],
+              ["Halftone", "Section bands and decorative rules.", <div className="halftone h-14 w-full" />],
+              ["Dither and hatch", "Succeeded runs dither; failures hatch.", <div className="flex h-14 w-full items-end gap-1">{[60, 85, 40, 100, 70].map((h, i) => <div key={i} className="flex flex-1 flex-col" style={{ height: `${h}%` }}>{i === 2 && <div className="hatch h-1/3 bg-fg" />}<div className="dither flex-1 border-t border-fg-3" /></div>)}</div>],
+              ["Segments", "Budgets read like an instrument.", <div className="w-full space-y-2.5"><Meter value={35} max={100} /><Meter value={93} max={100} /></div>],
+              ["Sparkline", "Trend at a glance in metric strips.", <Sparkline values={[3, 5, 4, 7, 6, 9, 8, 11, 9, 12]} className="w-full" height={40} />],
+              ["Sweep", "Only on work that is running now.", <div className="sweep flex h-14 w-full items-center gap-2 rounded-xs border border-line px-3 text-xs"><StatusGlyph kind="live" /> Grace is working</div>],
+              ["Empty mark", "Generative, so empty states differ.", <div className="flex h-14 items-center"><svg width="44" height="44" viewBox="0 0 56 56" className="text-line-3">{[4, 10, 16, 22].map((inset, i) => <rect key={i} x={inset} y={inset} width={56 - inset * 2} height={56 - inset * 2} fill="none" stroke="currentColor" strokeDasharray={i % 2 ? "2 2" : undefined} />)}<rect x="26" y="26" width="4" height="4" fill="var(--fg-3)" /></svg></div>],
+            ].map(([t, d, demo]) => (
+              <div key={t as string} className="bg-panel p-4">
+                <div className="flex h-16 items-center">{demo as ReactNode}</div>
+                <div className="mt-3 text-sm font-medium">{t as string}</div>
+                <p className="mt-0.5 text-xs text-fg-3">{d as string}</p>
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        <Section n="10" title="Spacing & shape" lede="A 4px base. Radii stay small so the interface reads as a tool, not a toy.">
           <div className="flex flex-wrap items-end gap-6">
             {[
               ["xs · 3", "rounded-xs"],

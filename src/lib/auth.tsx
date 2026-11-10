@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ApiError, api, isDemoMode } from "@/api/client";
+import { ApiError, api } from "@/api/client";
 import type { AuthUser, CliMe, HealthStatus, SessionResponse } from "@/api/types";
 
 /*
@@ -12,10 +12,9 @@ import type { AuthUser, CliMe, HealthStatus, SessionResponse } from "@/api/types
  *     signed_out       → /login
  *     no_access        signed in but not a member of anything
  *     ready
- * Demo mode runs the authenticated flow against the in-browser backend.
  */
 
-export type AuthMode = "demo" | "local_trusted" | "authenticated";
+export type AuthMode = "local_trusted" | "authenticated";
 export type AuthPhase = "loading" | "offline" | "bootstrap" | "signed_out" | "no_access" | "ready";
 
 interface AuthApi {
@@ -76,7 +75,6 @@ export function authErrorMessage(e: unknown): string {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
-  const demo = isDemoMode();
   const health = useQuery({
     queryKey: ["health"],
     queryFn: () => api.get<HealthStatus>("/health"),
@@ -88,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const me = useQuery({ queryKey: ["me", session.data?.user.id], queryFn: fetchMe, enabled: authed && !!session.data, retry: false, staleTime: 60_000 });
 
   const value = useMemo<AuthApi>(() => {
-    const mode: AuthMode = demo ? "demo" : authed ? "authenticated" : "local_trusted";
+    const mode: AuthMode = authed ? "authenticated" : "local_trusted";
     let phase: AuthPhase = "loading";
     if (health.isError) phase = "offline";
     else if (health.isPending) phase = "loading";
@@ -141,7 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       refresh: after,
     };
-  }, [demo, authed, health.isError, health.isPending, health.data, session.isPending, session.isError, session.data, me.isPending, me.data, qc, health, session]);
+  }, [authed, health.isError, health.isPending, health.data, session.isPending, session.isError, session.data, me.isPending, me.data, qc, health, session]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

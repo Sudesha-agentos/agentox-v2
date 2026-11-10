@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Check, Copy, Eye, EyeOff, RefreshCw } from "lucide-react";
-import { api, isDemoMode, setDemoMode } from "@/api/client";
+import { api } from "@/api/client";
 import type { InviteInfo } from "@/api/types";
 import { authErrorMessage, useAuth } from "@/lib/auth";
 import { toast } from "@/lib/toast";
@@ -62,7 +62,7 @@ export function AuthFrame({ children, footer }: { children: ReactNode; footer?: 
         <div className="mono flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs text-fg-4">
           {footer ?? (
             <>
-              <span>{auth.mode === "demo" ? "demo backend" : location.host}</span>
+              <span>{location.host}</span>
               {auth.health?.version && <span>v{auth.health.version}</span>}
               {auth.health?.deploymentMode && <span>{auth.health.deploymentMode.replace("_", " ")}</span>}
             </>
@@ -171,22 +171,6 @@ export function LoginPage() {
         </Link>
       </p>
       <p className="mt-2 text-xs text-fg-4">Forgot your password? Ask an instance admin to help you regain access.</p>
-      {auth.mode === "demo" && (
-        <div className="mt-8 rounded-sm border border-dashed border-line-3 p-3 text-xs text-fg-3">
-          <div className="mono mb-1 text-2xs tracking-wider text-fg-4 uppercase">Demo</div>
-          <div className="mono text-fg-2">demo@agentox.dev · agentox-demo</div>
-          <button
-            type="button"
-            className="mt-2 text-fg underline decoration-line-3 underline-offset-4"
-            onClick={() => {
-              setEmail("demo@agentox.dev");
-              setPassword("agentox-demo");
-            }}
-          >
-            Fill credentials
-          </button>
-        </div>
-      )}
     </AuthFrame>
   );
 }
@@ -314,15 +298,6 @@ export function ConnectPage() {
           }}
         >
           Retry now
-        </Button>
-        <Button
-          size="md"
-          onClick={() => {
-            setDemoMode(true);
-            window.location.href = "/login";
-          }}
-        >
-          Explore demo
         </Button>
       </div>
       <p className="mt-3 flex items-center gap-2 text-xs text-fg-4">
@@ -533,7 +508,6 @@ export function InvitePage() {
           )}
         </div>
       )}
-      {isDemoMode() && <p className="mono mt-8 text-2xs text-fg-4">demo invite token: demo-invite-token</p>}
     </AuthFrame>
   );
 }

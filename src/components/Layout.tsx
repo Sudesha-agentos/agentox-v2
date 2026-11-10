@@ -22,8 +22,6 @@ import {
   Users,
 } from "lucide-react";
 import { useApprovals, useCompanies, useHealth, useLiveRuns } from "@/api/hooks";
-import { isDemoMode, setDemoMode } from "@/api/client";
-import { resetDemoData } from "@/api/mock";
 import { useAuth } from "@/lib/auth";
 import { useCompany } from "@/lib/company";
 import { CrumbsProvider, useCrumbState } from "@/lib/crumbs";
@@ -54,7 +52,9 @@ function NavItem({ to, icon, label, count, end, live }: { to: string; icon: Reac
       className={({ isActive }) =>
         cx(
           "group flex h-7 items-center gap-2.5 rounded-sm px-2 text-sm transition-colors [&>svg]:size-[15px] [&>svg]:shrink-0",
-          isActive ? "bg-active text-fg [&>svg]:text-fg" : "text-fg-2 hover:bg-hover hover:text-fg [&>svg]:text-fg-3",
+          isActive
+            ? "relative bg-active text-fg before:absolute before:top-1.5 before:left-0 before:h-4 before:w-[2px] before:rounded-r-full before:bg-fg [&>svg]:text-fg"
+            : "text-fg-2 hover:bg-hover hover:text-fg [&>svg]:text-fg-3",
         )
       }
     >
@@ -104,7 +104,7 @@ function UserMenu() {
   const navigate = useNavigate();
   const company = useCompany();
   const name = auth.user?.name || auth.user?.email || (auth.mode === "local_trusted" ? "Local operator" : "Operator");
-  const sub = auth.mode === "local_trusted" ? "Trusted local instance" : auth.mode === "demo" ? "Demo workspace" : auth.user?.email;
+  const sub = auth.mode === "local_trusted" ? "Trusted local instance" : auth.user?.email;
   return (
     <Menu
       width={232}
@@ -123,13 +123,6 @@ function UserMenu() {
         { label: theme === "dark" ? "Light theme" : "Dark theme", icon: theme === "dark" ? <Sun /> : <Moon />, onSelect: toggleTheme },
         { label: "About agentox", icon: <Info />, onSelect: () => navigate("/product") },
         { label: "Design system", icon: <BookOpen />, onSelect: () => navigate("/design") },
-        ...(auth.mode === "demo"
-          ? [
-              "separator" as const,
-              { label: "Reset demo data", onSelect: () => (resetDemoData(), setTimeout(() => (window.location.href = "/"), 300)) },
-              { label: "Connect real server", onSelect: () => (setDemoMode(false), (window.location.href = "/")) },
-            ]
-          : []),
         ...(auth.canSignOut ? ["separator" as const, { label: "Sign out", icon: <LogOut />, destructive: true, onSelect: () => auth.signOut() }] : []),
       ]}
     />
@@ -139,14 +132,13 @@ function UserMenu() {
 function ConnectionLine() {
   const { status } = useLive();
   const health = useHealth();
-  const demo = isDemoMode();
   const label = status === "live" ? "live" : status === "connecting" ? "connecting" : "reconnecting";
   return (
     <div className="mono flex items-center gap-2 px-2 pt-2 text-2xs text-fg-4" title={status === "live" ? "Streaming live events" : "Live events disconnected; retrying"}>
       <span className={cx("size-1.5 rounded-full", status === "live" ? "bg-fg-2" : status === "connecting" ? "blink bg-fg-3" : "border border-fg-3")} />
       <span>{label}</span>
       <span className="text-line-3">/</span>
-      <span className="truncate">{demo ? "demo" : health.data?.version ? `v${health.data.version}` : "server"}</span>
+      <span className="truncate">{health.data?.version ? `v${health.data.version}` : "server"}</span>
     </div>
   );
 }
@@ -267,7 +259,7 @@ function Shell() {
   );
 
   return (
-    <div className="flex h-full">
+    <div className="grain flex h-full">
       <aside className="hidden w-[232px] shrink-0 border-r border-line bg-canvas lg:block">{sidebar}</aside>
       {drawer && (
         <div className="fixed inset-0 z-40 lg:hidden">
@@ -277,8 +269,9 @@ function Shell() {
       )}
       <div className="flex min-w-0 flex-1 flex-col bg-canvas">
         <TopBar onMenu={() => setDrawer(true)} onNew={() => setNewIssueOpen(true)} onSearch={() => setPaletteOpen(true)} />
-        <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-[1280px] px-4 py-6 sm:px-6">
+        <main className="relative min-h-0 flex-1 overflow-y-auto">
+          <div className="grid-paper pointer-events-none absolute inset-x-0 top-0 h-[420px]" aria-hidden />
+          <div className="relative mx-auto w-full max-w-[1280px] px-4 py-6 sm:px-6">
             <Outlet />
           </div>
         </main>

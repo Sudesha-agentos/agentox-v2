@@ -1,7 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useQueryClient, type QueryKey } from "@tanstack/react-query";
-import { isDemoMode } from "@/api/client";
-import { subscribeMock } from "@/api/mock";
 import type { LiveEvent } from "@/api/types";
 
 export type LiveStatus = "connecting" | "live" | "offline";
@@ -73,15 +71,6 @@ export function LiveUpdates({ companyId, children }: { companyId: string | null;
         pending.current.clear();
       }, 250);
     };
-
-    if (isDemoMode()) {
-      setStatus("live");
-      setConnectedAt(Date.now());
-      const off = subscribeMock((e) => e.companyId === cid && handle(e));
-      return () => {
-        off();
-      };
-    }
 
     let ws: WebSocket | null = null;
     let retry = 0;

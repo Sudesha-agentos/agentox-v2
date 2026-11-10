@@ -192,7 +192,7 @@ export function TasksPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageHeader index="04"
         title="Tasks"
         description={issues.data ? `${openCount} open · assign a task to an agent and it wakes up to work on it.` : undefined}
         actions={
