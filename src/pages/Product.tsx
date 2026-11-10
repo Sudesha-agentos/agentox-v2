@@ -2,6 +2,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Check, Clock, Copy, Plus } from "lucide-react";
 import { Reveal, scrollToId, useScrollProgress, useSmoothScroll } from "@/lib/motion";
+import { appHref } from "@/lib/hosts";
+import { SmartLink } from "@/components/SmartLink";
 import { toast } from "@/lib/toast";
 import { Avatar, Chip, Mark, Status, StatusGlyph, cx } from "@/components/ui";
 import { IssueStatusIcon } from "@/components/status";
@@ -67,9 +69,9 @@ function Btn({ children, onClick, primary, to, size = "md" }: { children: ReactN
     primary ? "bg-inv text-inv-fg hover:opacity-85" : "border border-line-3 text-fg hover:border-fg-3 hover:bg-hover",
   );
   return to ? (
-    <Link to={to} className={cls}>
+    <SmartLink href={appHref(to)} className={cls}>
       {children}
-    </Link>
+    </SmartLink>
   ) : (
     <button onClick={onClick} className={cls}>
       {children}
@@ -463,9 +465,9 @@ export function ProductPage() {
             <button onClick={() => scrollToId("how")} className="hidden text-fg-2 hover:text-fg sm:block">
               Self-host
             </button>
-            <Link to="/login" className="text-fg-2 hover:text-fg">
+            <SmartLink href={appHref("/login")} className="text-fg-2 hover:text-fg">
               Sign in
-            </Link>
+            </SmartLink>
             <Btn primary to="/signup">
               Get started
             </Btn>
@@ -736,9 +738,9 @@ export function ProductPage() {
             <Link to="/design" className="block text-fg-2 hover:text-fg">
               Design system
             </Link>
-            <Link to="/login" className="block text-fg-2 hover:text-fg">
+            <SmartLink href={appHref("/login")} className="block text-fg-2 hover:text-fg">
               Sign in
-            </Link>
+            </SmartLink>
           </div>
         </div>
         <div className="mono mx-auto flex max-w-6xl flex-wrap justify-between gap-2 border-t border-line px-6 py-6 text-2xs text-fg-4">

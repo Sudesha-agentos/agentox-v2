@@ -1,4 +1,6 @@
+import { useEffect } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { APP_ORIGIN, MARKETING_ORIGIN, hasSeparateMarketing, isMarketingHost } from "@/lib/hosts";
 import { useCompanies } from "@/api/hooks";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { CompanyContext, lastCompany, rememberCompany } from "@/lib/company";
@@ -44,7 +46,8 @@ function Gate({ children }: { children: React.ReactNode }) {
     case "bootstrap":
       return <ClaimPage />;
     case "signed_out":
-      return location.pathname === "/" ? <Navigate to="/product" replace /> : <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+      if (location.pathname === "/") return <Navigate to={hasSeparateMarketing ? "/login" : "/product"} replace />;
+      return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
     case "no_access":
       return <NoAccessPage />;
     case "ready":
@@ -92,12 +95,34 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** Leaves the current origin; used where one address hands off to the other. */
+function ExternalRedirect({ to }: { to: string }) {
+  useEffect(() => {
+    window.location.replace(to);
+  }, [to]);
+  return <Splash />;
+}
+
+/** On agentox.io: the product page and the design system; everything else belongs to the app. */
+function MarketingRoutes() {
+  const location = useLocation();
+  return (
+    <Routes>
+      <Route path="/" element={<ProductPage />} />
+      <Route path="/product" element={<Navigate to="/" replace />} />
+      <Route path="/design" element={<DesignPage />} />
+      <Route path="*" element={<ExternalRedirect to={`${APP_ORIGIN ?? ""}${location.pathname}${location.search}`} />} />
+    </Routes>
+  );
+}
+
 export function App() {
+  if (isMarketingHost) return <MarketingRoutes />;
   return (
     <AuthProvider>
       <Routes>
         <Route path="/design" element={<DesignPage />} />
-        <Route path="/product" element={<ProductPage />} />
+        <Route path="/product" element={hasSeparateMarketing ? <ExternalRedirect to={`${MARKETING_ORIGIN}/`} /> : <ProductPage />} />
         <Route path="/login" element={<AuthRoute><LoginPage /></AuthRoute>} />
         <Route path="/signup" element={<AuthRoute><SignupPage /></AuthRoute>} />
         <Route path="/invite/:token" element={<InvitePage />} />

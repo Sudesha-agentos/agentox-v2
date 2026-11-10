@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { useApprovals, useCompanies, useHealth, useLiveRuns } from "@/api/hooks";
 import { useAuth } from "@/lib/auth";
+import { productHref } from "@/lib/hosts";
 import { useCompany } from "@/lib/company";
 import { CrumbsProvider, useCrumbState } from "@/lib/crumbs";
 import { useLive } from "@/lib/live";
@@ -121,7 +122,7 @@ function UserMenu() {
       items={[
         { label: "Account", icon: <Settings />, onSelect: () => navigate(`/${company.id}/settings`) },
         { label: theme === "dark" ? "Light theme" : "Dark theme", icon: theme === "dark" ? <Sun /> : <Moon />, onSelect: toggleTheme },
-        { label: "About agentox", icon: <Info />, onSelect: () => navigate("/product") },
+        { label: "About agentox", icon: <Info />, onSelect: () => (productHref().startsWith("http") ? (window.location.href = productHref()) : navigate(productHref())) },
         { label: "Design system", icon: <BookOpen />, onSelect: () => navigate("/design") },
         ...(auth.canSignOut ? ["separator" as const, { label: "Sign out", icon: <LogOut />, destructive: true, onSelect: () => auth.signOut() }] : []),
       ]}

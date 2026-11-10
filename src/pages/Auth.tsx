@@ -8,6 +8,8 @@ import { authErrorMessage, useAuth } from "@/lib/auth";
 import { toast } from "@/lib/toast";
 import { Avatar, Button, Field, Input, Mark, Spinner, StatusGlyph, cx } from "@/components/ui";
 import { CompanyForm } from "@/components/CreateCompanyModal";
+import { SmartLink } from "@/components/SmartLink";
+import { productHref } from "@/lib/hosts";
 
 /* ------------------------------------------------------------- frame */
 
@@ -49,12 +51,12 @@ export function AuthFrame({ children, footer }: { children: ReactNode; footer?: 
     <div className="grid min-h-full lg:grid-cols-[minmax(420px,520px)_1fr]">
       <div className="flex min-h-full flex-col px-6 py-6 sm:px-12">
         <div className="flex items-center justify-between">
-          <Link to="/product" className="flex w-fit items-center gap-2 text-sm font-medium tracking-tight">
+          <SmartLink href={productHref()} className="flex w-fit items-center gap-2 text-sm font-medium tracking-tight">
             <Mark size={16} /> agentox
-          </Link>
-          <Link to="/product" className="text-xs text-fg-3 hover:text-fg">
+          </SmartLink>
+          <SmartLink href={productHref()} className="text-xs text-fg-3 hover:text-fg">
             What is agentox?
-          </Link>
+          </SmartLink>
         </div>
         <div className="flex flex-1 items-center py-10">
           <div className="enter w-full max-w-[360px]">{children}</div>
