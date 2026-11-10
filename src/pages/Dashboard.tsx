@@ -80,11 +80,11 @@ function RunChart({ data }: { data: Array<{ date: string; succeeded: number; fai
 
 function describe(e: ActivityEvent): string {
   const d = (e.details ?? {}) as Record<string, unknown>;
-  const title = typeof d.title === "string" ? d.title : typeof d.name === "string" ? d.name : "";
+  const title = [d.title, d.issueTitle, d.identifier, d.name].find((v): v is string => typeof v === "string") ?? "";
   const [entity, verb = ""] = e.action.split(".");
-  if (e.action === "issue.updated" && typeof d.status === "string") return `moved “${title}” → ${titleCase(d.status).toLowerCase()}`;
-  if (e.action === "issue.comment_added") return `commented on “${title}”`;
-  if (e.action === "issue.created") return `opened “${title}”`;
+  if (e.action === "issue.updated" && typeof d.status === "string") return `moved ${title ? `“${title}”` : "a task"} → ${titleCase(d.status).toLowerCase()}`;
+  if (e.action === "issue.comment_added") return `commented on ${title ? `“${title}”` : "a task"}`;
+  if (e.action === "issue.created") return `opened ${title ? `“${title}”` : "a task"}`;
   if (e.action === "agent.error") return "hit an error";
   if (entity === "approval") return `${verb === "created" ? "requested" : verb} ${(approvalTypeLabel[String(d.type)] ?? "approval").toLowerCase()}`;
   if (entity === "agent") return `${verb.replace(/_/g, " ")} ${title}`.trim();

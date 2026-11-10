@@ -227,7 +227,8 @@ function Feed({ agents, runs, issues }: { agents: Map<string, Agent>; runs: Map<
       case "activity.logged": {
         const d = (p.details ?? {}) as Record<string, unknown>;
         const who = p.agentId ? name(p.agentId) : p.actorType === "user" ? "You" : "System";
-        const title = typeof d.title === "string" ? `“${d.title}”` : "";
+        const named = [d.title, d.issueTitle, d.identifier].find((v): v is string => typeof v === "string");
+        const title = named ? `“${named}”` : "a task";
         if (p.action === "issue.comment_added") return `${who} commented on ${title}`;
         if (p.action === "issue.created") return `${who} created ${title}`;
         if (p.action === "issue.updated" && typeof d.status === "string") return `${who} moved ${title} to ${d.status.replace(/_/g, " ")}`;

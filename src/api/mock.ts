@@ -969,23 +969,41 @@ on("DELETE", "/tool-connections/:id/grants/:gid", (m) => {
   db.aiConnections = db.aiConnections.filter((c) => c.id !== m[1]);
   return { ok: true };
 });
-on("GET", "/companies/:cid/tools/gallery", () => ({
-  apps: [
-    ["github", "GitHub", "Repos, issues and pull requests", "Engineering"],
-    ["slack", "Slack", "Post updates and take requests in channels", "Communication"],
-    ["linear", "Linear", "Sync tasks with Linear issues", "Project management"],
-    ["notion", "Notion", "Read and write workspace pages", "Knowledge"],
-    ["google-drive", "Google Drive", "Search and edit docs and sheets", "Knowledge"],
-    ["stripe", "Stripe", "Billing data and customer lookups", "Finance"],
-    ["sentry", "Sentry", "Pull error reports into tasks", "Engineering"],
-    ["postgres", "Postgres", "Query a database read-only", "Data"],
-  ].map(([slug, name, description, cat]) => ({ slug, name, description, categories: [cat], availability: "available" })),
-}));
+// Gallery entries mirror the server's app definitions: each app lists how it can be connected.
+const oauth = (label: string) => [{ key: "oauth", label, auth: "oauth", whenToUse: "Recommended. Sign in with your account; nothing to copy." }];
+const apiKey = (field: string, placeholder: string, extra: object[] = []) => [
+  { key: "api_key", label: "API key", auth: "api_key", whenToUse: "Use a key from the app's settings.", credentialFields: [{ key: "apiKey", label: field, type: "password", required: true, secret: true, placeholder }], tenantFields: extra },
+];
+const GALLERY = [
+  { slug: "github", name: "GitHub", description: "Repos, issues and pull requests", categories: ["developer"], methods: [...oauth("Sign in with GitHub"), ...apiKey("Personal access token", "ghp_…")] },
+  { slug: "slack", name: "Slack", description: "Post updates and take requests in channels", categories: ["communication"], methods: oauth("Add to Slack") },
+  { slug: "linear", name: "Linear", description: "Sync tasks with Linear issues", categories: ["productivity"], methods: apiKey("API key", "lin_api_…") },
+  { slug: "notion", name: "Notion", description: "Read and write workspace pages", categories: ["content"], methods: oauth("Sign in with Notion") },
+  { slug: "google-drive", name: "Google Drive", description: "Search and edit docs and sheets", categories: ["productivity"], methods: oauth("Sign in with Google") },
+  { slug: "stripe", name: "Stripe", description: "Billing data and customer lookups", categories: ["commerce"], methods: apiKey("Restricted key", "rk_live_…") },
+  { slug: "sentry", name: "Sentry", description: "Pull error reports into tasks", categories: ["developer"], methods: apiKey("Auth token", "sntrys_…", [{ key: "organization", label: "Organization slug", type: "text", required: true, placeholder: "northwind" }]) },
+  { slug: "postgres", name: "Postgres", description: "Query a database read-only", categories: ["data"], methods: [{ key: "none", label: "Connection string", auth: "none", whenToUse: "Read-only access through a connection string.", tenantFields: [{ key: "connectionString", label: "Connection string", type: "password", required: true, secret: true, placeholder: "postgres://readonly@host/db" }] }] },
+];
+on("GET", "/companies/:cid/tools/gallery", () => ({ apps: GALLERY.map((a) => ({ ...a, availability: { available: true } })) }));
 on("GET", "/companies/:cid/tools/connections", (m) => ({ connections: db.toolConnections.filter((c) => c.companyId === m[1]) }));
 on("POST", "/companies/:cid/tools/apps/connect", (m, b) => {
-  const c = { id: uid(), companyId: m[1]!, name: b?.name ?? b?.galleryKey, applicationId: b?.galleryKey, connectionPurpose: "tool" as const, authKind: "oauth" as const, status: "active", healthStatus: "healthy" };
+  const app = GALLERY.find((a) => a.slug === b?.galleryKey);
+  if (!app) throw new HttpError(404, "Unknown app");
+  const method = (app.methods as Array<{ key: string; auth: string; credentialFields?: Array<{ key: string; required?: boolean; label: string }>; tenantFields?: Array<{ key: string; required?: boolean; label: string }> }>).find((x) => x.key === (b.connectionMethodKey ?? app.methods[0]!.key));
+  if (!method) throw new HttpError(400, "Unknown connection method");
+  for (const f of method.credentialFields ?? []) if (f.required && !b.credentialValues?.[f.key]) throw new HttpError(400, `${f.label} is required`);
+  for (const f of method.tenantFields ?? []) if (f.required && !b.configValues?.[f.key]) throw new HttpError(400, `${f.label} is required`);
+  const c = { id: uid(), companyId: m[1]!, name: b?.name ?? app.name, applicationId: app.slug, connectionPurpose: (app.slug === "slack" ? "channel" : "tool") as "tool" | "channel", authKind: method.auth as "oauth" | "api_key" | "none", status: "draft", healthStatus: null as string | null };
   db.toolConnections = [...db.toolConnections, c];
-  return { connection: c };
+  // The demo can't leave for a real provider, so OAuth completes immediately (auth: null).
+  return { connectionId: c.id, connection: c, application: { id: uid() }, catalog: [], actions: { readOnly: [{ catalogEntryId: uid() }, { catalogEntryId: uid() }], canMakeChanges: [{ catalogEntryId: uid() }] }, suggestedDefaults: {}, auth: null };
+});
+on("POST", "/companies/:cid/tools/apps/:id/finish", (m, b) => {
+  const c = find(db.toolConnections, m[2]!, "Connection");
+  if (!b?.access) throw new HttpError(400, "access: Required");
+  Object.assign(c, { status: "active", healthStatus: "healthy" });
+  db.toolConnections = [...db.toolConnections];
+  return { connection: c, profile: {}, profileEntries: [], profileBindings: [], policies: [] };
 });
 on("POST", "/tool-connections/:id/health-check", (m) => {
   const c = find(db.toolConnections, m[1]!, "Connection");
