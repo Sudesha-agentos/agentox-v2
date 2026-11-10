@@ -43,6 +43,9 @@ If the server isn't reachable, agentox shows a connect screen with a **Try demo*
 
 `npm run build` outputs static files to `dist/`. Serve them behind the same origin as the agentox server
 (or a reverse proxy that forwards `/api` to it), since the app calls relative `/api/...` URLs.
+The proxy must keep the browser's `Host` header, or forward it as `X-Forwarded-Host` with the
+server's trust-proxy setting enabled. The server only accepts changes from the address the browser
+used, and builds OAuth return links from it. Rewriting the host breaks sign-in flows and every save.
 
 ## The server
 
