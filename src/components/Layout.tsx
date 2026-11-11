@@ -22,14 +22,13 @@ import {
   Sun,
   Users,
 } from "lucide-react";
-import { useApprovals, useCompanies, useHealth, useLiveRuns } from "@/api/hooks";
+import { useApprovals, useCompanies, useLiveRuns } from "@/api/hooks";
 import { useAccessRequests } from "@/api/gateway";
 import { TerminalModal } from "./TerminalModal";
 import { useAuth } from "@/lib/auth";
 import { productHref } from "@/lib/hosts";
 import { useCompany } from "@/lib/company";
 import { CrumbsProvider, useCrumbState } from "@/lib/crumbs";
-import { useLive } from "@/lib/live";
 import { Avatar, Button, IconButton, Kbd, Mark, Menu, Spinner, cx } from "./ui";
 import { CommandPalette } from "./CommandPalette";
 import { NewIssueModal } from "./NewIssueModal";
@@ -135,20 +134,6 @@ function UserMenu() {
     />
     <TerminalModal open={terminal} onClose={() => setTerminal(false)} />
     </>
-  );
-}
-
-function ConnectionLine() {
-  const { status } = useLive();
-  const health = useHealth();
-  const label = status === "live" ? "live" : status === "connecting" ? "connecting" : "reconnecting";
-  return (
-    <div className="mono flex items-center gap-2 px-2 pt-2 text-2xs text-fg-4" title={status === "live" ? "Streaming live events" : "Live events disconnected; retrying"}>
-      <span className={cx("size-1.5 rounded-full", status === "live" ? "bg-fg-2" : status === "connecting" ? "blink bg-fg-3" : "border border-fg-3")} />
-      <span>{label}</span>
-      <span className="text-line-3">/</span>
-      <span className="truncate">{health.data?.version ? `v${health.data.version}` : "server"}</span>
-    </div>
   );
 }
 
@@ -264,7 +249,6 @@ function Shell() {
 
       <div className="border-t border-line pt-2">
         <UserMenu />
-        <ConnectionLine />
       </div>
     </div>
   );
