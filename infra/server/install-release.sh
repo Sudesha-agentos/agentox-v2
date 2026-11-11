@@ -1,11 +1,12 @@
 #!/bin/bash
 # Installs one agentox release on the server and (re)starts it. Runs as root via SSM Run Command.
-#   install-release.sh <release-id> <public-host> <backup-bucket> <region>
+#   install-release.sh <release-id> <public-host> <backup-bucket> <region> [mail-domain]
 set -euo pipefail
 RELEASE_ID="$1"
 HOST="$2"
 BUCKET="$3"
 REGION="$4"
+MAIL_DOMAIN="${5:-agentox.io}"
 REL="/opt/agentox/releases/$RELEASE_ID"
 [ -d "$REL/dist" ] || { echo "release $RELEASE_ID is missing dist/"; exit 1; }
 [ -f /var/lib/agentox/bootstrap.done ] || { echo "base bootstrap has not finished yet"; exit 1; }
@@ -13,6 +14,7 @@ REL="/opt/agentox/releases/$RELEASE_ID"
 install -d -m 755 /opt/agentox/bin /etc/caddy
 install -d -m 750 -o root -g agentox /etc/agentox
 echo "$REGION" > /etc/agentox/region
+echo "$HOST" > /etc/agentox/host
 
 # ---------------------------------------------------------- secrets helper
 # Generated once on this server and stored as SecureString in Parameter Store. They never
@@ -87,10 +89,35 @@ AGENTOX_ENGINE_API_URL=http://127.0.0.1:3100
 AGENTOX_ENGINE_TELEMETRY_DISABLED=1
 DO_NOT_TRACK=1
 EOF
-# Keep an operator override for sign-up (switched off after the first admin claims the instance).
-[ -f /etc/agentox/signup.env ] || echo "AGENTOX_ENGINE_AUTH_DISABLE_SIGN_UP=false" > /etc/agentox/signup.env
+# Self-serve: anyone can create an account. The gateway decides which workspace they reach
+# (a verified email, then their team's workspace by domain, or their own).
+echo "AGENTOX_ENGINE_AUTH_DISABLE_SIGN_UP=false" > /etc/agentox/signup.env
 chgrp agentox /etc/agentox/engine.env /etc/agentox/signup.env
 chmod 640 /etc/agentox/engine.env /etc/agentox/signup.env
+
+# The engine's own CLI (used for recovery, e.g. auth bootstrap-ceo) reads the mode from its config
+# file rather than the environment, so keep that file in line with how the engine actually runs.
+CONF=/var/lib/agentox/home/instances/default/config.json
+if [ -f "$CONF" ]; then
+  jq --arg url "https://$HOST" '.server.deploymentMode="authenticated" | .server.exposure="public"
+     | .auth.baseUrlMode="explicit" | .auth.publicBaseUrl=$url | .auth.disableSignUp=false' "$CONF" > "$CONF.new"
+  chown agentox:agentox "$CONF.new"; chmod --reference="$CONF" "$CONF.new"; mv "$CONF.new" "$CONF"
+fi
+
+# ----------------------------------------------------------- gateway settings
+ENGINE_VERSION=$(grep -oE 'paperclipai@[0-9][0-9.]*' "$REL/scripts/server.mjs" | head -1 | cut -d@ -f2)
+cat > /etc/agentox/gateway.env <<EOF
+NODE_ENV=production
+HOME=/home/agentox
+GATEWAY_PORT=3200
+ENGINE_URL=http://127.0.0.1:3100
+MAIL_MODE=ses
+MAIL_FROM="agentox <no-reply@$MAIL_DOMAIN>"
+AWS_REGION=$REGION
+ENGINE_CLI_VERSION=$ENGINE_VERSION
+EOF
+chgrp agentox /etc/agentox/gateway.env
+chmod 640 /etc/agentox/gateway.env
 
 # ------------------------------------------------------------------ secrets
 # Loaded into a root-owned runtime file at every start; the engine reads it into memory.
@@ -125,6 +152,74 @@ elif stored=$(aws ssm get-parameter --region "$REGION" --name "$param" --with-de
 fi
 SECRETS
 chmod 750 /opt/agentox/bin/agentox-secrets
+
+# The gateway's secrets: its code-signing secret, the database URL and the key of its service
+# account (created by agentox-gateway-setup below).
+cat > /opt/agentox/bin/agentox-gateway-secrets <<'SECRETS'
+#!/bin/bash
+set -euo pipefail
+p=/opt/agentox/bin/agentox-param
+REGION=$(cat /etc/agentox/region)
+install -d -m 750 -o root -g agentox /run/agentox
+umask 027
+key=$(aws ssm get-parameter --region "$REGION" --name /agentox/gateway-service-key --with-decryption --query Parameter.Value --output text)
+{
+  echo "GATEWAY_CODE_SECRET=$($p gateway-code-secret "openssl rand -hex 32")"
+  echo "GATEWAY_SERVICE_KEY=$key"
+  echo "DATABASE_URL=postgres://agentox:$($p db-password "openssl rand -hex 24")@127.0.0.1:5432/agentox"
+} > /run/agentox/gateway.env.tmp
+chgrp agentox /run/agentox/gateway.env.tmp
+mv /run/agentox/gateway.env.tmp /run/agentox/gateway.env
+SECRETS
+chmod 750 /opt/agentox/bin/agentox-gateway-secrets
+
+cat > /opt/agentox/bin/agentox-gateway <<'EOF'
+#!/bin/bash
+set -euo pipefail
+set -a
+. /etc/agentox/gateway.env
+. /run/agentox/gateway.env
+set +a
+cd /opt/agentox/current/gateway
+exec /usr/local/bin/node dist/gateway.mjs
+EOF
+chmod 755 /opt/agentox/bin/agentox-gateway
+
+# One-time: a service account the gateway acts as. It must be an instance admin, because only
+# instance admins can create workspaces. Its key lives only in Parameter Store.
+cat > /opt/agentox/bin/agentox-gateway-setup <<'SETUP'
+#!/bin/bash
+set -euo pipefail
+REGION=$(cat /etc/agentox/region)
+HOST=$(cat /etc/agentox/host)
+E=http://127.0.0.1:3100
+key=$(aws ssm get-parameter --region "$REGION" --name /agentox/gateway-service-key --with-decryption --query Parameter.Value --output text 2>/dev/null || true)
+if [ -n "$key" ] && curl -sf -H "Authorization: Bearer $key" "$E/api/cli-auth/me" | jq -e '.isInstanceAdmin == true' >/dev/null; then
+  echo "gateway service account: ok"; exit 0
+fi
+email="system@$HOST"
+pass=$(/opt/agentox/bin/agentox-param gateway-service-password "openssl rand -hex 24")
+tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+auth() { # auth <sign-up|sign-in> <json>
+  curl -sS -D "$tmp/h" -o "$tmp/b" -w '%{http_code}' -X POST "$E/api/auth/$1/email" \
+    -H "Content-Type: application/json" -H "Origin: https://$HOST" -H "Host: $HOST" -H "X-Forwarded-Proto: https" --data "$2"
+}
+code=$(auth sign-up "$(jq -nc --arg e "$email" --arg p "$pass" '{email: $e, password: $p, name: "agentox"}')")
+[ "${code:0:1}" = 2 ] || code=$(auth sign-in "$(jq -nc --arg e "$email" --arg p "$pass" '{email: $e, password: $p}')")
+[ "${code:0:1}" = 2 ] || { echo "service account sign-in failed ($code)"; exit 1; }
+uid=$(jq -r '.user.id' "$tmp/b")
+# The engine marks its session cookies Secure; send them explicitly over loopback.
+cookie=$(grep -i '^set-cookie:' "$tmp/h" | sed -E 's/^[Ss]et-[Cc]ookie: ([^;]+).*/\1/' | paste -sd ';' -)
+sudo -u postgres psql -d agentox -v ON_ERROR_STOP=1 -q -v uid="$uid" <<'SQL'
+INSERT INTO instance_user_roles (user_id, role) VALUES (:'uid', 'instance_admin') ON CONFLICT DO NOTHING;
+SQL
+token=$(curl -sS -X POST "$E/api/board-api-keys" -H "Content-Type: application/json" -H "Origin: https://$HOST" -H "Host: $HOST" \
+  -H "X-Forwarded-Proto: https" -H "Cookie: $cookie" --data '{"name": "agentox gateway", "expiresAt": null}' | jq -r '.token // empty')
+[ -n "$token" ] || { echo "could not create the gateway key"; exit 1; }
+aws ssm put-parameter --region "$REGION" --name /agentox/gateway-service-key --type SecureString --value "$token" --overwrite >/dev/null
+echo "gateway service account: created"
+SETUP
+chmod 750 /opt/agentox/bin/agentox-gateway-setup
 
 cat > /opt/agentox/bin/agentox-engine <<'EOF'
 #!/bin/bash
@@ -162,6 +257,13 @@ cat > /etc/caddy/Caddyfile <<EOF
 
 $HOST {
 	encode zstd gzip
+
+	# Self-serve sign-up, access requests and terminal sign-in. Named matchers keep their order,
+	# so this is tried before the engine's broader /api/*.
+	@gateway path /api/agentox/* /cli
+	handle @gateway {
+		reverse_proxy 127.0.0.1:3200
+	}
 
 	@engine path /api/* /mcp/* /.well-known/oauth-protected-resource* /.well-known/oauth-authorization-server*
 	handle @engine {
@@ -229,6 +331,27 @@ LimitNOFILE=65536
 WantedBy=multi-user.target
 EOF
 
+cat > /etc/systemd/system/agentox-gateway.service <<'EOF'
+[Unit]
+Description=agentox gateway (sign-up, workspaces, access requests)
+After=network-online.target postgresql.service agentox-engine.service
+Wants=network-online.target agentox-engine.service
+Requires=postgresql.service
+
+[Service]
+User=agentox
+Group=agentox
+ExecStartPre=+/opt/agentox/bin/agentox-gateway-secrets
+ExecStart=/opt/agentox/bin/agentox-gateway
+Restart=always
+RestartSec=5
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 cat > /etc/systemd/system/agentox-backup.service <<'EOF'
 [Unit]
 Description=agentox nightly backup to S3
@@ -256,8 +379,11 @@ chmod -R a+rX "$REL"
 ln -sfn "$REL" /opt/agentox/current
 systemctl daemon-reload
 systemctl enable --now agentox-backup.timer
-systemctl enable caddy agentox-engine
+systemctl enable caddy agentox-engine agentox-gateway
 systemctl restart agentox-engine
+for _ in $(seq 1 60); do curl -sf http://127.0.0.1:3100/api/health | jq -e '.status == "ok"' >/dev/null && break; sleep 3; done
+/opt/agentox/bin/agentox-gateway-setup || echo "WARNING: gateway setup failed; rerun /opt/agentox/bin/agentox-gateway-setup, then restart agentox-gateway"
+systemctl restart agentox-gateway
 systemctl restart caddy
 
 # Keep the five most recent releases.

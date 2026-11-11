@@ -3,6 +3,7 @@
 #
 #   infra/dns.sh show                 list current records
 #   infra/dns.sh point-app <ipv4>     app A record -> <ipv4>, and remove app AAAA
+#   infra/dns.sh ses-dkim             add the SES Easy DKIM CNAMEs from the stack's DkimRecords output
 #
 # The token is read from ~/.config/agentox/hostinger-token (never printed). Every change first
 # saves the whole zone to ~/.config/agentox/dns-backups/, then validates, then applies.
@@ -48,6 +49,21 @@ case "${1:-}" in
     fi
     call GET | jq -r '.[] | select(.name == "app") | "Now:       \(.type) app -> \([.records[].content] | join(", "))"'
     ;;
+  ses-dkim)
+    recs=$(aws cloudformation describe-stacks --stack-name "${STACK:-agentox}" \
+      --query "Stacks[0].Outputs[?OutputKey=='DkimRecords'].OutputValue" --output text)
+    [ -n "$recs" ] && [ "$recs" != "None" ] || { echo "No DkimRecords output; run infra/deploy.sh apply first."; exit 1; }
+    zone="[]"
+    for pair in $recs; do
+      name="${pair%%=*}"; value="${pair#*=}"
+      name="${name%.}"; name="${name%.$DOMAIN}"   # relative to the zone
+      zone=$(echo "$zone" | jq -c --arg n "$name" --arg v "$value" '. + [{name: $n, type: "CNAME", ttl: 3600, records: [{content: $v}]}]')
+    done
+    backup
+    body=$(jq -nc --argjson z "$zone" '{overwrite: true, zone: $z}')
+    URL="$API/validate" call POST "$body" >/dev/null && echo "Validated: $(echo "$zone" | jq length) DKIM records"
+    call PUT "$body" >/dev/null && echo "Applied:   $(echo "$zone" | jq -r '[.[].name] | join(", ")')"
+    ;;
   *)
-    sed -n '2,9p' "$0"; exit 1 ;;
+    sed -n '2,10p' "$0"; exit 1 ;;
 esac

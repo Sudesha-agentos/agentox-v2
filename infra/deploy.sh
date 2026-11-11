@@ -55,20 +55,27 @@ case "${1:-}" in
     ;;
 
   apply)
+    # A stack that was only ever previewed is still being created; anything else is an update.
+    # (Picking the waiter up front matters: the create waiter passes instantly on an old CREATE_COMPLETE.)
+    before=$(aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].StackStatus' --output text)
     aws cloudformation execute-change-set --stack-name "$STACK" --change-set-name "$CHANGESET"
     echo "Applying change set; this takes a few minutes..."
-    aws cloudformation wait stack-create-complete --stack-name "$STACK" 2>/dev/null \
-      || aws cloudformation wait stack-update-complete --stack-name "$STACK"
+    if [ "$before" = "REVIEW_IN_PROGRESS" ]; then
+      aws cloudformation wait stack-create-complete --stack-name "$STACK"
+    else
+      aws cloudformation wait stack-update-complete --stack-name "$STACK"
+    fi
     aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].Outputs' --output table
     ;;
 
   release)
-    instance=$(out InstanceId); host=$(out AppHost); bucket=$(out BackupBucket)
+    instance=$(out InstanceId); host=$(out AppHost); bucket=$(out BackupBucket); mail=$(out MailDomain)
     id="$(date -u +%Y%m%d%H%M%S)-$(git rev-parse --short HEAD)"
     echo "Building the interface..."
     npm run build >/dev/null
+    npm run build:gateway >/dev/null
     tarball="$(mktemp -d)/agentox-$id.tgz"
-    COPYFILE_DISABLE=1 tar --no-xattrs -czf "$tarball" dist scripts package.json infra/server
+    COPYFILE_DISABLE=1 tar --no-xattrs -czf "$tarball" dist scripts package.json infra/server gateway/dist gateway/install.sh
     aws s3 cp "$tarball" "s3://$bucket/releases/agentox-$id.tgz" --only-show-errors
     echo "Waiting for the server to finish its first-boot setup..."
     for _ in $(seq 1 60); do
@@ -81,7 +88,7 @@ case "${1:-}" in
       "set -euo pipefail" \
       "aws s3 cp s3://$bucket/releases/agentox-$id.tgz /tmp/release.tgz --region $AWS_REGION --only-show-errors" \
       "mkdir -p /opt/agentox/releases/$id && tar -xzf /tmp/release.tgz -C /opt/agentox/releases/$id && rm -f /tmp/release.tgz" \
-      "bash /opt/agentox/releases/$id/infra/server/install-release.sh $id $host $bucket $AWS_REGION"
+      "bash /opt/agentox/releases/$id/infra/server/install-release.sh $id $host $bucket $AWS_REGION ${mail:-agentox.io}"
     echo "Released $id to https://$host"
     ;;
 

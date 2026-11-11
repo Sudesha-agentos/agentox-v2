@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
-    "server": "node scripts/server.mjs"
+    "server": "node scripts/server.mjs",
+    "build:gateway": "esbuild gateway/server.mjs --bundle --platform=node --format=esm --target=node20 --outfile=gateway/dist/gateway.mjs --banner:js=\"import{createRequire as __cr}from'module';const require=__cr(import.meta.url);\" --log-level=warning",
+    "gateway": "node gateway/server.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.107.1",
@@ -19,11 +21,14 @@
     "react-router-dom": "^7.18.5"
   },
   "devDependencies": {
+    "@aws-sdk/client-sesv2": "^3.1165.0",
     "@tailwindcss/vite": "^4.3.5",
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
+    "esbuild": "^0.28.2",
+    "pg": "^8.23.1",
     "tailwindcss": "^4.3.5",
     "typescript": "^5.9.3",
     "vite": "^7.3.8"

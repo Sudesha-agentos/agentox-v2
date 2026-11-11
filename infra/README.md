@@ -6,6 +6,11 @@ A single free-tier-friendly EC2 instance runs everything:
   `/api`, `/mcp` and WebSockets to the engine on `127.0.0.1:3100`, keeping the browser's Host.
 - **The engine** (via `scripts/server.mjs`) runs in authenticated, public mode under systemd as the
   unprivileged `agentox` user.
+- **The gateway** (`gateway/server.mjs`, port 3200) runs the self-serve layer: email verification
+  codes, one workspace per company email domain (personal addresses get their own), requests to
+  join that owners and admins approve, and one-time codes for terminal sign-in (`/cli`). It acts
+  through a service account that is an instance admin, and grants membership through the engine's
+  own invites. Mail goes out through Amazon SES from `no-reply@agentox.io`.
 - **PostgreSQL 17** runs locally, listening on localhost only. Public deployments must use a real
   Postgres; the engine refuses its embedded database in this mode.
 - **Secrets** (master key, auth secret, agent token secret, signing keys, database password) are
@@ -29,20 +34,47 @@ infra/deploy.sh status     # outputs, DNS check and health
 After the first `apply`, point an **A record** for `APP_DOMAIN` at the `PublicIp` output and remove
 any AAAA record for that name. Caddy obtains the certificate as soon as DNS resolves.
 
-## First admin
+## Email (one time)
 
-Public deployments are claimed with a one-time invite created on the server:
+`infra/deploy.sh apply` creates the SES identity for `agentox.io`. Then:
 
 ```bash
-# on the server, through Session Manager
-sudo -u agentox bash -lc 'set -a; . /etc/agentox/engine.env; . /run/agentox/secrets.env; set +a; \
-  npx --yes paperclipai@2026.1106.0 auth bootstrap-ceo --data-dir /var/lib/agentox/home'
+infra/dns.sh ses-dkim        # add the three DKIM CNAMEs to Hostinger DNS
+aws sesv2 get-email-identity --email-identity agentox.io --query DkimAttributes.Status   # SUCCESS once DNS has propagated
 ```
 
-Open the printed `/invite/...` link, create your account and accept. Then switch sign-up off:
+New SES accounts are in the sandbox: they can only send to verified addresses. Request production
+access once (AWS reviews it within about a day):
 
 ```bash
-echo "AGENTOX_ENGINE_AUTH_DISABLE_SIGN_UP=true" | sudo tee /etc/agentox/signup.env && sudo systemctl restart agentox-engine
+aws sesv2 put-account-details --production-access-enabled --mail-type TRANSACTIONAL \
+  --website-url https://agentox.io --contact-language EN \
+  --use-case-description "Sign-up verification codes and workspace access notifications for agentox users."
+```
+
+## Recovering admin access
+
+Sign-up is self-serve, so day to day nobody needs this. To mint an instance-admin invite by hand:
+
+```bash
+# on the server, through Session Manager (each release keeps config.json in line with the real
+# mode, which bootstrap-ceo reads instead of the environment)
+sudo -u agentox bash -c 'set -a; . /etc/agentox/engine.env; . /run/agentox/secrets.env; set +a; \
+  export DATABASE_URL="$AGENTOX_DATABASE_URL"; \
+  for v in $(compgen -e | grep ^AGENTOX_ENGINE_); do export "PAPERCLIP_${v#AGENTOX_ENGINE_}=${!v}"; done; \
+  cd /opt/agentox/current && npx --yes paperclipai@2026.1106.0 auth bootstrap-ceo --data-dir /var/lib/agentox/home'
+```
+
+Open the printed `/invite/...` link while signed in and accept it.
+
+## Product page (agentox.io)
+
+The same build serves the product page from Vercel; it switches to marketing mode by hostname
+(see `.env.production`). The token lives in `~/.config/agentox/vercel-token`.
+
+```bash
+infra/deploy-site.sh deploy         # build and ship to the agentox-site project
+infra/deploy-site.sh move-domains   # one time: attach agentox.io, www -> agentox.io (308)
 ```
 
 ## Cost

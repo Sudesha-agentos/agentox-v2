@@ -7,7 +7,9 @@ import { CompanyContext, lastCompany, rememberCompany } from "@/lib/company";
 import { LiveUpdates } from "@/lib/live";
 import { Layout } from "@/components/Layout";
 import { ErrorBox, Mark, Spinner } from "@/components/ui";
-import { ClaimPage, ConnectPage, InvitePage, LoginPage, NoAccessPage, OnboardingPage, SignupPage } from "@/pages/Auth";
+import { ClaimPage, ConnectPage, InvitePage, LoginPage, SignupPage } from "@/pages/Auth";
+import { OnboardingPage } from "@/pages/Onboarding";
+import { CliAuthPage } from "@/pages/CliAuth";
 import { DashboardPage } from "@/pages/Dashboard";
 import { LivePage } from "@/pages/Live";
 import { TasksPage } from "@/pages/Tasks";
@@ -48,8 +50,8 @@ function Gate({ children }: { children: React.ReactNode }) {
     case "signed_out":
       if (location.pathname === "/") return <Navigate to={hasSeparateMarketing ? "/login" : "/product"} replace />;
       return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
-    case "no_access":
-      return <NoAccessPage />;
+    case "onboarding":
+      return <OnboardingPage />;
     case "ready":
       return <>{children}</>;
   }
@@ -126,6 +128,7 @@ export function App() {
         <Route path="/login" element={<AuthRoute><LoginPage /></AuthRoute>} />
         <Route path="/signup" element={<AuthRoute><SignupPage /></AuthRoute>} />
         <Route path="/invite/:token" element={<InvitePage />} />
+        <Route path="/cli-auth/:id" element={<CliAuthPage />} />
         <Route path="/" element={<Gate><Home /></Gate>} />
         <Route path="/:cid" element={<Gate><CompanyShell /></Gate>}>
           <Route index element={<DashboardPage />} />

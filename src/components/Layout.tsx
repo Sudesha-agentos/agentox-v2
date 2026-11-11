@@ -18,16 +18,19 @@ import {
   Settings,
   ShieldCheck,
   SquareCheck,
+  SquareTerminal,
   Sun,
   Users,
 } from "lucide-react";
 import { useApprovals, useCompanies, useHealth, useLiveRuns } from "@/api/hooks";
+import { useAccessRequests } from "@/api/gateway";
+import { TerminalModal } from "./TerminalModal";
 import { useAuth } from "@/lib/auth";
 import { productHref } from "@/lib/hosts";
 import { useCompany } from "@/lib/company";
 import { CrumbsProvider, useCrumbState } from "@/lib/crumbs";
 import { useLive } from "@/lib/live";
-import { Avatar, Button, IconButton, Kbd, Mark, Menu, cx } from "./ui";
+import { Avatar, Button, IconButton, Kbd, Mark, Menu, Spinner, cx } from "./ui";
 import { CommandPalette } from "./CommandPalette";
 import { NewIssueModal } from "./NewIssueModal";
 import { CreateCompanyModal } from "./CreateCompanyModal";
@@ -106,7 +109,9 @@ function UserMenu() {
   const company = useCompany();
   const name = auth.user?.name || auth.user?.email || (auth.mode === "local_trusted" ? "Local operator" : "Operator");
   const sub = auth.mode === "local_trusted" ? "Trusted local instance" : auth.user?.email;
+  const [terminal, setTerminal] = useState(false);
   return (
+    <>
     <Menu
       width={232}
       trigger={(p) => (
@@ -121,12 +126,15 @@ function UserMenu() {
       )}
       items={[
         { label: "Account", icon: <Settings />, onSelect: () => navigate(`/${company.id}/settings`) },
+        ...(auth.mode === "authenticated" ? [{ label: "Run in terminal", icon: <SquareTerminal />, onSelect: () => setTerminal(true) }] : []),
         { label: theme === "dark" ? "Light theme" : "Dark theme", icon: theme === "dark" ? <Sun /> : <Moon />, onSelect: toggleTheme },
         { label: "About agentox", icon: <Info />, onSelect: () => (productHref().startsWith("http") ? (window.location.href = productHref()) : navigate(productHref())) },
         { label: "Design system", icon: <BookOpen />, onSelect: () => navigate("/design") },
         ...(auth.canSignOut ? ["separator" as const, { label: "Sign out", icon: <LogOut />, destructive: true, onSelect: () => auth.signOut() }] : []),
       ]}
     />
+    <TerminalModal open={terminal} onClose={() => setTerminal(false)} />
+    </>
   );
 }
 
@@ -197,9 +205,11 @@ function TopBar({ onMenu, onNew, onSearch }: { onMenu: () => void; onNew: () => 
 
 function Shell() {
   const company = useCompany();
+  const auth = useAuth();
   const cid = company.id;
   const { data: pending = [] } = useApprovals(cid, "pending");
   const { data: liveRuns = [] } = useLiveRuns(cid);
+  const { data: accessRequests = [] } = useAccessRequests(cid);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [newIssueOpen, setNewIssueOpen] = useState(false);
   const [newCompanyOpen, setNewCompanyOpen] = useState(false);
@@ -243,7 +253,7 @@ function Shell() {
         </NavGroup>
         <NavGroup label="Team">
           <NavItem to={`${base}/agents`} icon={<Bot />} label="Agents" />
-          <NavItem to={`${base}/members`} icon={<Users />} label="Members" />
+          <NavItem to={`${base}/members`} icon={<Users />} label="Members" count={accessRequests.length || undefined} />
           <NavItem to={`${base}/spend`} icon={<CircleDollarSign />} label="Spend" />
         </NavGroup>
         <NavGroup label="Configure">
@@ -270,6 +280,11 @@ function Shell() {
       )}
       <div className="flex min-w-0 flex-1 flex-col bg-canvas">
         <TopBar onMenu={() => setDrawer(true)} onNew={() => setNewIssueOpen(true)} onSearch={() => setPaletteOpen(true)} />
+        {auth.reconnecting && (
+          <div role="status" className="hatch flex h-8 shrink-0 items-center justify-center gap-2 border-b border-line-2 text-xs text-fg-2">
+            <Spinner className="size-2.5" /> Connection to the server lost. Reconnecting…
+          </div>
+        )}
         <main className="relative min-h-0 flex-1 overflow-y-auto">
           <div className="grid-paper pointer-events-none absolute inset-x-0 top-0 h-[420px]" aria-hidden />
           <div className="relative mx-auto w-full max-w-[1280px] px-4 py-6 sm:px-6">

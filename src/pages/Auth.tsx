@@ -1,13 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Check, Copy, Eye, EyeOff, RefreshCw } from "lucide-react";
+import { ArrowRight, Copy, Eye, EyeOff, RefreshCw } from "lucide-react";
 import { api } from "@/api/client";
 import type { InviteInfo } from "@/api/types";
 import { authErrorMessage, useAuth } from "@/lib/auth";
 import { toast } from "@/lib/toast";
 import { Avatar, Button, Field, Input, Mark, Spinner, StatusGlyph, cx } from "@/components/ui";
-import { CompanyForm } from "@/components/CreateCompanyModal";
 import { SmartLink } from "@/components/SmartLink";
 import { productHref } from "@/lib/hosts";
 
@@ -46,7 +45,6 @@ function Transcript() {
 }
 
 export function AuthFrame({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
-  const auth = useAuth();
   return (
     <div className="grid min-h-full lg:grid-cols-[minmax(420px,520px)_1fr]">
       <div className="flex min-h-full flex-col px-6 py-6 sm:px-12">
@@ -62,13 +60,7 @@ export function AuthFrame({ children, footer }: { children: ReactNode; footer?: 
           <div className="enter w-full max-w-[360px]">{children}</div>
         </div>
         <div className="mono flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs text-fg-4">
-          {footer ?? (
-            <>
-              <span>{location.host}</span>
-              {auth.health?.version && <span>v{auth.health.version}</span>}
-              {auth.health?.deploymentMode && <span>{auth.health.deploymentMode.replace("_", " ")}</span>}
-            </>
-          )}
+          {footer ?? <span>© {new Date().getFullYear()} agentox</span>}
         </div>
       </div>
       <div className="dot-grid relative hidden items-center justify-center overflow-hidden border-l border-line bg-panel p-12 lg:flex">
@@ -87,7 +79,7 @@ export function AuthFrame({ children, footer }: { children: ReactNode; footer?: 
   );
 }
 
-function Heading({ title, sub }: { title: string; sub?: ReactNode }) {
+export function Heading({ title, sub }: { title: string; sub?: ReactNode }) {
   return (
     <div className="mb-7">
       <h1 className="text-xl font-medium tracking-tight">{title}</h1>
@@ -96,7 +88,7 @@ function Heading({ title, sub }: { title: string; sub?: ReactNode }) {
   );
 }
 
-function FormError({ msg }: { msg: string | null }) {
+export function FormError({ msg }: { msg: string | null }) {
   if (!msg) return null;
   return (
     <div role="alert" className="enter flex items-start gap-2.5 rounded-sm border border-line-3 bg-raised px-3 py-2.5 text-sm">
@@ -136,7 +128,7 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (auth.phase === "ready" || auth.phase === "no_access") navigate(next, { replace: true });
+    if (auth.phase === "ready" || auth.phase === "onboarding") navigate(next, { replace: true });
   }, [auth.phase, navigate, next]);
 
   const submit = async (e?: React.FormEvent) => {
@@ -172,7 +164,6 @@ export function LoginPage() {
           Create an account
         </Link>
       </p>
-      <p className="mt-2 text-xs text-fg-4">Forgot your password? Ask an instance admin to help you regain access.</p>
     </AuthFrame>
   );
 }
@@ -190,7 +181,7 @@ export function SignupPage() {
   const short = password.length > 0 && password.length < 8;
 
   useEffect(() => {
-    if (auth.phase === "ready" || auth.phase === "no_access") navigate(next, { replace: true });
+    if (auth.phase === "ready" || auth.phase === "onboarding") navigate(next, { replace: true });
   }, [auth.phase, navigate, next]);
 
   const submit = async (e: React.FormEvent) => {
@@ -209,7 +200,7 @@ export function SignupPage() {
 
   return (
     <AuthFrame>
-      <Heading title="Create your account" sub="You'll be the operator: approve hires, set budgets, review work." />
+      <Heading title="Create your account" sub="Use your work email. We'll set up your team's workspace, or connect you to it if your team is already here." />
       <form onSubmit={submit} className="space-y-4">
         <Field label="Name">
           <Input autoComplete="name" autoFocus value={name} onChange={(e) => setName(e.target.value)} className="h-9" required />
@@ -252,9 +243,74 @@ function PasswordMeter({ value }: { value: string }) {
 
 /* --------------------------------------------------- gate screens */
 
-export function ConnectPage() {
+/** How long the server has been unreachable, counted from when this screen appeared. */
+function useElapsed() {
+  const [since] = useState(() => Date.now());
+  const [now, setNow] = useState(since);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return Math.floor((now - since) / 1000);
+}
+
+function RetryControls() {
   const auth = useAuth();
   const [busy, setBusy] = useState(false);
+  return (
+    <>
+      <div className="mt-8 flex gap-2">
+        <Button
+          variant="primary"
+          size="md"
+          className="flex-1"
+          loading={busy}
+          icon={<RefreshCw />}
+          onClick={() => {
+            setBusy(true);
+            auth.retry();
+            setTimeout(() => setBusy(false), 800);
+          }}
+        >
+          Retry now
+        </Button>
+      </div>
+      <p className="mt-3 flex items-center gap-2 text-xs text-fg-4">
+        <Spinner className="size-2.5" /> Retrying every few seconds
+      </p>
+    </>
+  );
+}
+
+/** Shown when the server has never answered. Production users get a status page; developers get setup steps. */
+export function ConnectPage() {
+  return import.meta.env.DEV ? <ConnectDev /> : <Unavailable />;
+}
+
+function Unavailable() {
+  const secs = useElapsed();
+  const long = secs >= 120;
+  const clock = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+  return (
+    <AuthFrame footer={<span className="mono tnum">unreachable for {clock}</span>}>
+      <div className="mono mb-3 flex items-center gap-2 text-2xs tracking-wider text-fg-3 uppercase">
+        <span className="size-1.5 rounded-full border border-fg-3" /> Temporarily unavailable
+      </div>
+      <Heading
+        title="agentox will be right back"
+        sub="We can't reach the server right now. This usually means it is restarting or being updated, which takes under a minute. This page reconnects on its own, and your agents' work is saved."
+      />
+      {long && (
+        <p className="border-l border-line-3 pl-3 text-sm text-fg-2">
+          This is taking longer than usual. If it continues, contact the person who administers your agentox workspace.
+        </p>
+      )}
+      <RetryControls />
+    </AuthFrame>
+  );
+}
+
+function ConnectDev() {
   const cmd = "npm run server";
   return (
     <AuthFrame footer={<span>waiting for {location.host}/api …</span>}>
@@ -286,126 +342,20 @@ export function ConnectPage() {
           </div>
         </li>
       </ol>
-      <div className="mt-8 flex gap-2">
-        <Button
-          variant="primary"
-          size="md"
-          className="flex-1"
-          loading={busy}
-          icon={<RefreshCw />}
-          onClick={async () => {
-            setBusy(true);
-            auth.retry();
-            setTimeout(() => setBusy(false), 800);
-          }}
-        >
-          Retry now
-        </Button>
-      </div>
-      <p className="mt-3 flex items-center gap-2 text-xs text-fg-4">
-        <Spinner className="size-2.5" /> Retrying every few seconds
-      </p>
+      <RetryControls />
     </AuthFrame>
   );
 }
 
+/** A brand-new server that hasn't been set up yet. People never see this on agentox.io. */
 export function ClaimPage() {
   const auth = useAuth();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const publicExposure = auth.health?.deploymentExposure === "public";
-  const signedIn = !!auth.user;
   return (
     <AuthFrame>
-      <div className="mono mb-3 text-2xs tracking-wider text-fg-3 uppercase">First run</div>
-      <Heading title="Claim this instance" sub="No one administers this agentox server yet. The first operator becomes the instance admin." />
-      {publicExposure ? (
-        <div className="space-y-3 text-sm text-fg-2">
-          <p>This server is publicly exposed, so it can only be claimed from the machine running it:</p>
-          <div className="mono rounded-sm border border-line-2 bg-panel px-3 py-2 text-xs">
-            <span className="text-fg-4">$ </span>npm run server -- auth bootstrap-ceo
-          </div>
-          <p className="text-fg-3">Open the printed /invite link in this browser to finish.</p>
-        </div>
-      ) : (
-        <ol className="space-y-4">
-          <Step n="01" done={signedIn} title="Create the admin account">
-            {!signedIn && (
-              <div className="mt-2 flex gap-2">
-                <Link to="/signup?next=/">
-                  <Button variant="primary">Create account</Button>
-                </Link>
-                <Link to="/login?next=/">
-                  <Button>Sign in</Button>
-                </Link>
-              </div>
-            )}
-            {signedIn && <div className="mono mt-1 text-xs text-fg-3">{auth.user?.email}</div>}
-          </Step>
-          <Step n="02" title="Claim admin rights">
-            <FormError msg={error} />
-            <Button
-              variant="primary"
-              className="mt-2"
-              disabled={!signedIn}
-              loading={busy}
-              onClick={async () => {
-                setBusy(true);
-                setError(null);
-                try {
-                  await auth.claimInstance();
-                } catch (e) {
-                  setError(authErrorMessage(e));
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              Claim instance
-            </Button>
-          </Step>
-        </ol>
-      )}
-    </AuthFrame>
-  );
-}
-
-function Step({ n, title, done, children }: { n: string; title: string; done?: boolean; children?: ReactNode }) {
-  return (
-    <li className="flex gap-3 border-l border-line-2 pl-4">
-      <span className={cx("mono -ml-[25px] flex size-4.5 shrink-0 items-center justify-center rounded-full border bg-canvas text-2xs", done ? "border-fg bg-fg text-inv-fg" : "border-line-3 text-fg-3")}>
-        {done ? <Check className="size-2.5" /> : n.slice(1)}
-      </span>
-      <div className="min-w-0 flex-1 pb-2">
-        <div className={cx("text-sm", done ? "text-fg-3" : "text-fg")}>{title}</div>
-        {children}
-      </div>
-    </li>
-  );
-}
-
-export function NoAccessPage() {
-  const auth = useAuth();
-  return (
-    <AuthFrame>
-      <Heading title="No workspace access yet" sub={<>You're signed in as <span className="text-fg">{auth.user?.email}</span>, but you aren't a member of any workspace on this server.</>} />
-      <p className="mb-6 text-sm text-fg-2">Ask a workspace admin for an invite link. If you just requested access, you'll get in once they approve it.</p>
-      <div className="flex gap-2">
-        <Button variant="primary" icon={<RefreshCw />} onClick={() => auth.refresh()}>
-          Check again
-        </Button>
-        <Button onClick={() => auth.signOut()}>Sign out</Button>
-      </div>
-    </AuthFrame>
-  );
-}
-
-export function OnboardingPage() {
-  return (
-    <AuthFrame>
-      <div className="mono mb-3 text-2xs tracking-wider text-fg-3 uppercase">Step 1 of 1</div>
-      <Heading title="Create a workspace" sub="A workspace is one company of agents: a mission, a budget, and a team." />
-      <CompanyForm submitLabel="Create workspace" />
+      <Heading title="agentox is getting ready" sub="This workspace server is still being set up. Check back in a few minutes." />
+      <Button icon={<RefreshCw />} onClick={() => auth.retry()}>
+        Check again
+      </Button>
     </AuthFrame>
   );
 }
@@ -416,7 +366,7 @@ export function InvitePage() {
   const { token = "" } = useParams();
   const auth = useAuth();
   const [busy, setBusy] = useState(false);
-  const [state, setState] = useState<"idle" | "requested" | "member">("idle");
+  const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const invite = useQuery({ queryKey: ["invite", token], queryFn: () => api.get<InviteInfo>(`/invites/${encodeURIComponent(token)}`), retry: false, enabled: auth.phase !== "offline" && auth.phase !== "loading" });
   const next = `/invite/${token}`;
@@ -455,16 +405,7 @@ export function InvitePage() {
       </div>
       {inv.inviteMessage && <p className="mb-6 border-l border-line-3 pl-3 text-sm text-fg-2">{inv.inviteMessage}</p>}
 
-      {state === "requested" ? (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 text-sm">
-            <StatusGlyph kind="queued" /> Request sent. A workspace admin needs to approve it.
-          </div>
-          <Button onClick={() => auth.refresh()} icon={<RefreshCw />}>
-            Check status
-          </Button>
-        </div>
-      ) : !signedIn ? (
+      {!signedIn ? (
         <div className="space-y-2">
           <Link to={`/signup?next=${encodeURIComponent(next)}`} className="block">
             <Button variant="primary" size="md" className="h-9 w-full">
@@ -491,10 +432,14 @@ export function InvitePage() {
               setError(null);
               try {
                 await api.post(`/invites/${encodeURIComponent(token)}/accept`, { requestType: "human" });
-                setState("requested");
+                await auth.refresh();
+                navigate(inv.companyId ? `/${inv.companyId}` : "/", { replace: true });
               } catch (e) {
                 const msg = authErrorMessage(e);
-                if (/already belong/i.test(msg)) setState("member");
+                if (/already/i.test(msg)) {
+                  navigate(inv.companyId ? `/${inv.companyId}` : "/", { replace: true });
+                  return;
+                }
                 setError(msg);
               } finally {
                 setBusy(false);
@@ -503,11 +448,6 @@ export function InvitePage() {
           >
             Accept invite
           </Button>
-          {state === "member" && (
-            <Link to="/" className="block text-center text-sm text-fg underline underline-offset-4">
-              Open workspace
-            </Link>
-          )}
         </div>
       )}
     </AuthFrame>

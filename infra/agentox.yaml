@@ -29,6 +29,11 @@ Parameters:
     Default: app.agentox.io
     AllowedPattern: "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$"
     Description: Hostname for the app. Point an A record at the PublicIp output; Caddy then gets its certificate.
+  MailDomain:
+    Type: String
+    Default: agentox.io
+    AllowedPattern: "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$"
+    Description: Domain that verification and access-request emails are sent from (no-reply@MailDomain).
 
 Resources:
   # ------------------------------------------------------------------ storage
@@ -120,6 +125,13 @@ Resources:
                 Effect: Allow
                 Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents, logs:DescribeLogStreams]
                 Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/agentox/*"
+              - Sid: SendMailFromOwnDomain
+                Effect: Allow
+                Action: ses:SendEmail
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    ses:FromAddress: !Sub "no-reply@${MailDomain}"
       Tags:
         - { Key: project, Value: agentox }
 
@@ -220,6 +232,14 @@ Resources:
       Tags:
         - { Key: project, Value: agentox }
 
+  # -------------------------------------------------------------------- email
+  # Verification codes and access-request notices. Easy DKIM: three CNAME records go into DNS
+  # (infra/dns.sh ses-dkim). New SES accounts start in the sandbox until production access is granted.
+  MailIdentity:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: !Ref MailDomain
+
   # -------------------------------------------------------------- operations
   AlertTopic:
     Type: AWS::SNS::Topic
@@ -270,3 +290,12 @@ Outputs:
     Value: !Ref AppDomain
   BackupBucket:
     Value: !Ref BackupBucket
+  MailDomain:
+    Value: !Ref MailDomain
+  DkimRecords:
+    Description: CNAME name=value pairs for SES Easy DKIM; infra/dns.sh ses-dkim adds them.
+    Value: !Join
+      - " "
+      - - !Join ["=", [!GetAtt MailIdentity.DkimDNSTokenName1, !GetAtt MailIdentity.DkimDNSTokenValue1]]
+        - !Join ["=", [!GetAtt MailIdentity.DkimDNSTokenName2, !GetAtt MailIdentity.DkimDNSTokenValue2]]
+        - !Join ["=", [!GetAtt MailIdentity.DkimDNSTokenName3, !GetAtt MailIdentity.DkimDNSTokenValue3]]
