@@ -281,12 +281,20 @@ async function sendVerification(user) {
        window_start = case when now() - agentox_gw.email_codes.window_start < interval '1 hour' then agentox_gw.email_codes.window_start else now() end`,
     [user.id, user.email, hmac(`${user.id}:${code}`)],
   );
-  await sendMail(
+  const sent = sendMail(
     user.email,
     `${code} is your agentox code`,
     `Your agentox verification code is ${code}. It expires in 10 minutes. If you didn't try to sign up, you can ignore this email.`,
     mailHtml([`Your verification code is`, `<span style="font-family:ui-monospace,Menlo,monospace;font-size:26px;letter-spacing:6px">${code}</span>`, `<span style="color:#666">It expires in 10 minutes. If you didn't try to sign up, you can ignore this email.</span>`]),
   );
+  try {
+    await sent;
+  } catch (e) {
+    // Don't hold a failed send against them: no cooldown, no count toward the hourly limit.
+    await q(`update agentox_gw.email_codes set sent_at = now() - interval '1 minute', window_count = greatest(window_count - 1, 0) where user_id = $1`, [user.id]);
+    log("mail.failed", { user: user.id, error: String(e?.message || e) });
+    throw Object.assign(new Error("We couldn't send the email just now. Try again in a minute."), { status: 502, expose: true });
+  }
 }
 
 async function checkVerification(user, code) {
@@ -636,7 +644,7 @@ async function start() {
       route(req, res).catch((e) => {
         const status = e.status && e.status >= 400 && e.status < 600 ? e.status : 500;
         if (status >= 500) log("error", { path: req.url, error: String(e.stack || e) });
-        send(res, status, { error: status >= 500 && !e.engine ? "Something went wrong. Try again." : e.message, ...(e.step ? { step: e.step } : {}) });
+        send(res, status, { error: status >= 500 && !e.engine && !e.expose ? "Something went wrong. Try again." : e.message, ...(e.step ? { step: e.step } : {}) });
       });
     })
     .listen(cfg.port, cfg.host, () => log("gateway listening", { port: cfg.port, serviceUserId }));
