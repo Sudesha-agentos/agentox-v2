@@ -271,6 +271,8 @@ export interface Member {
   role?: string | null;
   membershipRole?: string | null;
   principalType?: string;
+  principalId?: string | null;
+  status?: string;
   user?: { id: string; name?: string | null; email?: string | null } | null;
   createdAt?: string;
 }
