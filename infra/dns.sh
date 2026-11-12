@@ -41,6 +41,13 @@ case "${1:-}" in
     ip="${2:?usage: infra/dns.sh point-app <ipv4>}"
     [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || { echo "Not an IPv4 address: $ip"; exit 1; }
     backup
+    # An ALIAS or CNAME on app (Hostinger adds one when app.agentox.io is set up as a website or
+    # behind its CDN in hPanel) can't coexist with an A record, so it goes first.
+    for t in ALIAS CNAME; do
+      if call GET | jq -e --arg t "$t" '.[] | select(.name == "app" and .type == $t)' >/dev/null; then
+        call DELETE "$(jq -nc --arg t "$t" '{filters: [{name: "app", type: $t}]}')" >/dev/null && echo "Removed:   app $t"
+      fi
+    done
     body=$(jq -nc --arg ip "$ip" '{overwrite: true, zone: [{name: "app", type: "A", ttl: 300, records: [{content: $ip}]}]}')
     URL="$API/validate" call POST "$body" >/dev/null && echo "Validated: app A -> $ip"
     call PUT "$body" >/dev/null && echo "Applied:   app A -> $ip"
