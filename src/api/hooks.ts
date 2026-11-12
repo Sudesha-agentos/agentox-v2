@@ -200,7 +200,15 @@ export function useUpdateIssue(cid: string) {
 
 // ---------- people ----------
 
-export const useMembers = (cid: string) => useQuery({ queryKey: keys.members(cid), queryFn: () => api.get<Member[]>(`/companies/${cid}/members`) });
+/** The engine answers `{ members, access }`, with each person's id as `principalId`; older builds sent a bare list. */
+export const useMembers = (cid: string) =>
+  useQuery({
+    queryKey: keys.members(cid),
+    queryFn: () =>
+      api.get<Member[] | { members?: Member[] }>(`/companies/${cid}/members`).then((r) =>
+        (Array.isArray(r) ? r : r.members ?? []).map((m) => ({ ...m, userId: m.userId ?? m.user?.id ?? m.principalId ?? null })),
+      ),
+  });
 export const useInvites = (cid: string) =>
   useQuery({ queryKey: keys.invites(cid), queryFn: () => api.get<{ invites: CompanyInvite[] }>(`/companies/${cid}/invites?state=active&limit=50`).then((r) => r.invites ?? []) });
 export const useJoinRequests = (cid: string) =>

@@ -106,7 +106,7 @@ export function SettingsPage() {
   const h = auth.health;
   return (
     <div className="max-w-4xl">
-      <PageHeader title="Settings" />
+      <PageHeader index="10" title="Settings" />
       <Section title="Workspace" description="Identity, mission and spending limits for this company of agents.">
         <WorkspaceForm key={company.updatedAt} company={company} />
       </Section>
@@ -125,7 +125,7 @@ export function SettingsPage() {
       </Section>
       <Section title="Server" description="The agentox server this interface is connected to.">
         <Panel>
-          <PanelHeader title="agentox server" meta={auth.mode === "demo" ? "demo" : location.host} />
+          <PanelHeader title="agentox server" meta={location.host} />
           <div className="px-3.5 pb-1">
             <DL
               items={[

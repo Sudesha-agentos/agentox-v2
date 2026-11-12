@@ -2,13 +2,14 @@ import { useState } from "react";
 import { Check, Link2, Plus, X } from "lucide-react";
 import { api } from "@/api/client";
 import { keys, useAction, useInvites, useJoinRequests, useMembers } from "@/api/hooks";
+import { useAccessRequests, useDecideAccess, useGatewayConfig, type AccessRequest } from "@/api/gateway";
 import type { CompanyInvite, Member } from "@/api/types";
 import { useAuth } from "@/lib/auth";
 import { useCompany } from "@/lib/company";
 import { useCrumbs } from "@/lib/crumbs";
 import { timeAgo, titleCase } from "@/lib/format";
-import { toastError } from "@/lib/toast";
-import { Avatar, Button, Empty, ErrorBox, Field, Modal, PageHeader, Panel, PanelHeader, Segmented, SkeletonRows, Table, Tag, Td, Th, Tr } from "@/components/ui";
+import { toast, toastError } from "@/lib/toast";
+import { Avatar, Button, Empty, ErrorBox, Field, Modal, PageHeader, Panel, PanelHeader, Segmented, Select, SkeletonRows, Table, Tag, Td, Th, Tr } from "@/components/ui";
 import { CopyField } from "./Integrations";
 
 const ROLES = [
@@ -93,7 +94,10 @@ export function MembersPage() {
   const { id: cid } = useCompany();
   useCrumbs([{ label: "Members" }], "members");
   const auth = useAuth();
-  const members = useMembers(cid);
+  const allMembers = useMembers(cid);
+  const config = useGatewayConfig();
+  // The agentox system account that sets up workspaces is a member of each; people don't need to see it.
+  const members = { ...allMembers, data: allMembers.data?.filter((m) => (m.userId ?? m.user?.id) !== config.data?.serviceUserId) };
   const invites = useInvites(cid);
   const requests = useJoinRequests(cid);
   const [inviting, setInviting] = useState(false);
@@ -108,7 +112,7 @@ export function MembersPage() {
 
   return (
     <div className="max-w-4xl">
-      <PageHeader
+      <PageHeader index="07"
         title="Members"
         description="People who operate this workspace. Agents are managed separately."
         actions={
@@ -123,9 +127,11 @@ export function MembersPage() {
         </div>
       )}
 
+      <AccessRequests cid={cid} />
+
       {pending.length > 0 && (
         <Panel className="mb-4 overflow-hidden">
-          <PanelHeader title="Requests to join" meta={String(pending.length)} />
+          <PanelHeader title="Requests from invite links" meta={String(pending.length)} />
           <ul className="divide-y divide-line">
             {pending.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center gap-3 px-3.5 py-2.5">
@@ -245,5 +251,62 @@ export function MembersPage() {
       </Panel>
       <InviteModal cid={cid} open={inviting} onClose={() => setInviting(false)} />
     </div>
+  );
+}
+
+/* ----------------------------------------------- asking to join */
+
+/** People from the workspace's email domain asking to join. Only owners and admins get any rows. */
+function AccessRequests({ cid }: { cid: string }) {
+  const requests = useAccessRequests(cid);
+  const list = requests.data ?? [];
+  if (!list.length) return null;
+  return (
+    <Panel className="mb-4 overflow-hidden">
+      <PanelHeader title="Asking to join" meta={String(list.length)} />
+      <ul className="divide-y divide-line">
+        {list.map((r) => (
+          <AccessRequestRow key={r.id} cid={cid} r={r} />
+        ))}
+      </ul>
+    </Panel>
+  );
+}
+
+function AccessRequestRow({ cid, r }: { cid: string; r: AccessRequest }) {
+  const decide = useDecideAccess(cid);
+  const [role, setRole] = useState("operator");
+  const name = r.name || r.email;
+  const act = async (decision: "approve" | "reject") => {
+    try {
+      await decide.mutateAsync({ id: r.id, decision, role });
+      toast(decision === "approve" ? `${name} can now open the workspace` : "Request declined");
+    } catch (e) {
+      toastError(e);
+    }
+  };
+  return (
+    <li className="flex flex-wrap items-center gap-3 px-3.5 py-2.5">
+      <Avatar name={name} size={24} human />
+      <div className="min-w-0 flex-1">
+        <div className="text-sm">{name}</div>
+        <div className="mono text-2xs text-fg-4">
+          {r.email} · asked {timeAgo(r.createdAt)}
+        </div>
+      </div>
+      <Select value={role} onChange={(e) => setRole(e.target.value)} className="w-28" aria-label="Role">
+        {ROLES.filter((x) => x.value !== "owner").map((x) => (
+          <option key={x.value} value={x.value}>
+            {x.label}
+          </option>
+        ))}
+      </Select>
+      <Button size="xs" variant="primary" icon={<Check />} loading={decide.isPending && decide.variables?.decision === "approve"} disabled={decide.isPending} onClick={() => act("approve")}>
+        Admit
+      </Button>
+      <Button size="xs" variant="ghost" icon={<X />} loading={decide.isPending && decide.variables?.decision === "reject"} disabled={decide.isPending} onClick={() => act("reject")}>
+        Decline
+      </Button>
+    </li>
   );
 }

@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ApiError, api, isDemoMode } from "@/api/client";
+import { ApiError, api } from "@/api/client";
 import type { AuthUser, CliMe, HealthStatus, SessionResponse } from "@/api/types";
 
 /*
@@ -8,21 +8,22 @@ import type { AuthUser, CliMe, HealthStatus, SessionResponse } from "@/api/types
  *   offline            server unreachable
  *   local_trusted      no auth; implicit local operator
  *   authenticated:
- *     bootstrap        no instance admin yet → claim (private) or CLI invite (public)
+ *     bootstrap        a brand-new server nobody has set up yet
  *     signed_out       → /login
- *     no_access        signed in but not a member of anything
+ *     onboarding       signed in, no workspace yet → verify email, then create or request one
  *     ready
- * Demo mode runs the authenticated flow against the in-browser backend.
  */
 
-export type AuthMode = "demo" | "local_trusted" | "authenticated";
-export type AuthPhase = "loading" | "offline" | "bootstrap" | "signed_out" | "no_access" | "ready";
+export type AuthMode = "local_trusted" | "authenticated";
+export type AuthPhase = "loading" | "offline" | "bootstrap" | "signed_out" | "onboarding" | "ready";
 
 interface AuthApi {
   phase: AuthPhase;
   mode: AuthMode;
   user: AuthUser | null;
   health: HealthStatus | undefined;
+  /** The server answered before but the latest check failed; the app stays up and shows a notice. */
+  reconnecting: boolean;
   canSignOut: boolean;
   retry: () => void;
   signIn: (email: string, password: string) => Promise<void>;
@@ -76,21 +77,25 @@ export function authErrorMessage(e: unknown): string {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
-  const demo = isDemoMode();
   const health = useQuery({
     queryKey: ["health"],
     queryFn: () => api.get<HealthStatus>("/health"),
-    retry: false,
+    // A brief blip (a restart, a dropped packet) should not flash the unreachable screen.
+    retry: 2,
+    retryDelay: 1500,
     refetchInterval: (q) => (q.state.status === "error" ? 4000 : q.state.data?.bootstrapStatus === "bootstrap_pending" ? 2500 : 30000),
   });
   const authed = health.data?.deploymentMode === "authenticated";
+  const healthFailing = health.errorUpdatedAt > health.dataUpdatedAt;
   const session = useQuery({ queryKey: ["session"], queryFn: fetchSession, enabled: authed, retry: false, staleTime: 60_000 });
   const me = useQuery({ queryKey: ["me", session.data?.user.id], queryFn: fetchMe, enabled: authed && !!session.data, retry: false, staleTime: 60_000 });
 
   const value = useMemo<AuthApi>(() => {
-    const mode: AuthMode = demo ? "demo" : authed ? "authenticated" : "local_trusted";
+    const mode: AuthMode = authed ? "authenticated" : "local_trusted";
     let phase: AuthPhase = "loading";
-    if (health.isError) phase = "offline";
+    // Offline only when the server has never answered; once it has, keep the last known state.
+    // (A query that never succeeded goes back to "pending" on every retry, so judge by timestamps.)
+    if (!health.data && healthFailing) phase = "offline";
     else if (health.isPending) phase = "loading";
     else if (!authed) phase = "ready";
     else if (health.data?.bootstrapStatus === "bootstrap_pending") phase = "bootstrap";
@@ -98,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     else if (session.isError) phase = "offline";
     else if (!session.data) phase = "signed_out";
     else if (me.isPending) phase = "loading";
-    else if (me.data && !me.data.isInstanceAdmin && me.data.companyIds.length === 0) phase = "no_access";
+    else if (me.data && me.data.companyIds.length === 0) phase = "onboarding";
     else phase = "ready";
 
     const after = async () => {
@@ -114,6 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mode,
       user: session.data?.user ?? null,
       health: health.data,
+      reconnecting: !!health.data && healthFailing,
       canSignOut: authed && !!session.data,
       retry: () => {
         health.refetch();
@@ -141,7 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       refresh: after,
     };
-  }, [demo, authed, health.isError, health.isPending, health.data, session.isPending, session.isError, session.data, me.isPending, me.data, qc, health, session]);
+  }, [authed, health.isError, health.isPending, health.data, session.isPending, session.isError, session.data, me.isPending, me.data, qc, health, session]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

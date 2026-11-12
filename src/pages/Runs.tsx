@@ -38,7 +38,7 @@ export function RunsPage() {
 
   return (
     <div>
-      <PageHeader title="Runs" description="Every heartbeat, with its full transcript. Failures surface first." />
+      <PageHeader index="03" title="Runs" description="Every heartbeat, with its full transcript. Failures surface first." />
       <Toolbar>
         <div className="relative w-full sm:w-56">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-fg-4" />

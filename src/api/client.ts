@@ -1,28 +1,8 @@
-import { mockRequest } from "./mock";
 import { ApiError } from "./errors";
 
 export { ApiError };
 
 const BASE = "/api";
-const DEMO_KEY = "agentox.demo";
-
-export function isDemoMode(): boolean {
-  try {
-    return localStorage.getItem(DEMO_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export function setDemoMode(on: boolean) {
-  try {
-    if (on) localStorage.setItem(DEMO_KEY, "1");
-    else localStorage.removeItem(DEMO_KEY);
-  } catch {
-    // storage unavailable; demo mode just won't persist
-  }
-}
-
 function messageFor(status: number, body: unknown): string {
   if (body && typeof body === "object") {
     const b = body as { error?: unknown; message?: unknown; details?: Array<{ path?: unknown[]; message?: string }> };
@@ -41,8 +21,6 @@ function messageFor(status: number, body: unknown): string {
 }
 
 export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  if (isDemoMode()) return mockRequest<T>(method, path, body);
-
   let res: Response;
   try {
     res = await fetch(BASE + path, {

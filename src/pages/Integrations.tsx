@@ -26,7 +26,7 @@ export function IntegrationsPage() {
 
   return (
     <div className="max-w-5xl">
-      <PageHeader title="Integrations" description="What your agents run on and connect to. Start with readiness: it tells you which agents can work and how to fix the ones that can't." />
+      <PageHeader index="09" title="Integrations" description="What your agents run on and connect to. Start with readiness: it tells you which agents can work and how to fix the ones that can't." />
       <Tabs
         value={tab}
         onChange={go}

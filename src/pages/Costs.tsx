@@ -30,7 +30,7 @@ export function SpendPage() {
 
   return (
     <div>
-      <PageHeader title="Spend" description="What agents cost, by agent and token. Budgets pause agents automatically." actions={<Segmented value={range} onChange={setRange} items={RANGES} />} />
+      <PageHeader index="08" title="Spend" description="What agents cost, by agent and token. Budgets pause agents automatically." actions={<Segmented value={range} onChange={setRange} items={RANGES} />} />
       {summary.isError && <ErrorBox error={summary.error} onRetry={() => summary.refetch()} />}
 
       <Panel className="mb-4 grid grid-cols-2 md:grid-cols-4">
@@ -96,8 +96,8 @@ export function SpendPage() {
                   </Td>
                   <Td className="max-sm:hidden">
                     <span className="flex items-center gap-3">
-                      <span className="h-1.5 flex-1 overflow-hidden bg-line-2">
-                        <span className="block h-full bg-fg-2" style={{ width: `${(r.costCents / total) * 100}%` }} />
+                      <span className="h-2 flex-1 overflow-hidden rounded-xs bg-line">
+                        <span className="dither block h-full border-r border-fg-2" style={{ width: `${(r.costCents / total) * 100}%` }} />
                       </span>
                       <span className="mono w-10 text-right text-xs text-fg-3 tnum">{Math.round((r.costCents / total) * 100)}%</span>
                     </span>

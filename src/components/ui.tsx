@@ -161,8 +161,8 @@ export function Checkbox({ checked, onChange, label }: { checked: boolean; onCha
 
 /* --------------------------------------------------------------- surfaces */
 
-export function Panel({ className, children }: { className?: string; children: ReactNode }) {
-  return <section className={cx("rounded-md border border-line bg-panel", className)}>{children}</section>;
+export function Panel({ className, children, plain }: { className?: string; children: ReactNode; plain?: boolean }) {
+  return <section className={cx("rounded-md border border-line bg-panel", !plain && "ticks", className)}>{children}</section>;
 }
 
 export function PanelHeader({ title, meta, action, className }: { title: ReactNode; meta?: ReactNode; action?: ReactNode; className?: string }) {
@@ -250,8 +250,39 @@ export function Kbd({ children }: { children: ReactNode }) {
   return <kbd className="mono inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-xs border border-line-2 px-1 text-2xs text-fg-3">{children}</kbd>;
 }
 
-/** Monochrome identity: initials in a bordered square. Agents square, humans round. */
+function hash(str: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+
+/** A unique, mirrored 5×5 pixel mark per agent. Same name, same mark, everywhere. */
+export function Identicon({ seed, size = 22, className }: { seed: string; size?: number; className?: string }) {
+  const h = hash(seed);
+  const cells: Array<[number, number]> = [];
+  for (let i = 0; i < 15; i++) {
+    if ((h >> i) & 1) {
+      const col = Math.floor(i / 5);
+      const row = i % 5;
+      cells.push([col, row]);
+      if (col < 2) cells.push([4 - col, row]);
+    }
+  }
+  if (cells.length < 4) cells.push([2, 1], [2, 3], [1, 2], [3, 2]);
+  return (
+    <span className={cx("inline-flex shrink-0 items-center justify-center rounded-xs border border-line-3 bg-raised", className)} style={{ width: size, height: size }} aria-hidden>
+      <svg viewBox="0 0 5 5" width={size * 0.62} height={size * 0.62} shapeRendering="crispEdges">
+        {cells.map(([x, y], i) => (
+          <rect key={i} x={x} y={y} width={1} height={1} fill="var(--fg-2)" />
+        ))}
+      </svg>
+    </span>
+  );
+}
+
+/** Agents get an identicon; people get round initials. */
 export function Avatar({ name, size = 22, human, className }: { name: string; size?: number; human?: boolean; className?: string }) {
+  if (!human) return <Identicon seed={name} size={size} className={className} />;
   const initials =
     name
       .split(/[\s._-]+/)
@@ -261,7 +292,7 @@ export function Avatar({ name, size = 22, human, className }: { name: string; si
       .join("") || "?";
   return (
     <span
-      className={cx("mono inline-flex shrink-0 items-center justify-center border border-line-3 bg-raised font-medium text-fg-2", human ? "rounded-full" : "rounded-xs", className)}
+      className={cx("mono inline-flex shrink-0 items-center justify-center rounded-full border border-line-3 bg-raised font-medium text-fg-2", className)}
       style={{ width: size, height: size, fontSize: Math.max(9, size * 0.38) }}
       aria-hidden
     >
@@ -270,12 +301,15 @@ export function Avatar({ name, size = 22, human, className }: { name: string; si
   );
 }
 
-/** Usage meter. Hatched once it crosses the warning threshold. */
-export function Meter({ value, max, className }: { value: number; max: number; className?: string }) {
+/** Usage meter drawn as instrument segments. Segments past 90% are solid; the rest are dim. */
+export function Meter({ value, max, className, segments = 24 }: { value: number; max: number; className?: string; segments?: number }) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  const lit = Math.round((pct / 100) * segments);
   return (
-    <div className={cx("h-1 w-full overflow-hidden rounded-full bg-line-2", className)} role="meter" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
-      <div className={cx("h-full", pct >= 90 ? "hatch bg-fg" : "bg-fg-2")} style={{ width: `${pct}%` }} />
+    <div className={cx("flex h-1.5 w-full gap-[2px]", className)} role="meter" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
+      {Array.from({ length: segments }, (_, i) => (
+        <span key={i} className={cx("flex-1 rounded-[1px]", i < lit ? (i / segments >= 0.9 || pct >= 90 ? "bg-fg" : "bg-fg-3") : "bg-line-2")} />
+      ))}
     </div>
   );
 }
@@ -452,12 +486,25 @@ export function Tr({ children, onClick, className, flash }: { children: ReactNod
 
 /* ------------------------------------------------------------ feedback */
 
+/** Concentric squares, offset by the title so each empty state looks a little different. */
+function EmptyMark({ seed }: { seed: string }) {
+  const h = hash(seed);
+  const rings = 4 + (h % 3);
+  return (
+    <svg width="56" height="56" viewBox="0 0 56 56" className="mb-4 text-line-3" aria-hidden>
+      {Array.from({ length: rings }, (_, i) => {
+        const inset = 4 + i * (22 / rings);
+        return <rect key={i} x={inset} y={inset} width={56 - inset * 2} height={56 - inset * 2} fill="none" stroke="currentColor" strokeDasharray={i % 2 ? "2 2" : undefined} rx={1} />;
+      })}
+      <rect x="26" y="26" width="4" height="4" fill="var(--fg-3)" />
+    </svg>
+  );
+}
+
 export function Empty({ title, body, action, className }: { title: string; body?: ReactNode; action?: ReactNode; className?: string }) {
   return (
     <div className={cx("dot-grid flex flex-col items-center justify-center px-6 py-14 text-center", className)}>
-      <div className="mb-3 flex size-8 items-center justify-center rounded-sm border border-line-2 bg-panel">
-        <span className="size-1.5 rounded-full bg-fg-4" />
-      </div>
+      <EmptyMark seed={title} />
       <div className="text-base font-medium">{title}</div>
       {body && <div className="mt-1 max-w-sm text-sm text-fg-3">{body}</div>}
       {action && <div className="mt-4">{action}</div>}
@@ -499,18 +546,38 @@ export function ErrorBox({ error, onRetry }: { error: unknown; onRetry?: () => v
 
 /* --------------------------------------------------------------- layout */
 
-export function PageHeader({ title, description, actions, children }: { title: ReactNode; description?: ReactNode; actions?: ReactNode; children?: ReactNode }) {
+export function PageHeader({ title, description, actions, children, index }: { title: ReactNode; description?: ReactNode; actions?: ReactNode; children?: ReactNode; index?: string }) {
   return (
-    <div className="mb-5">
+    <div className="relative mb-6">
+      <div className="mono mb-3 flex items-center gap-3 text-2xs tracking-wider text-fg-4 uppercase">
+        <span className="text-fg-3">{index ?? "§"}</span>
+        <span>{typeof title === "string" ? title : null}</span>
+        <span className="halftone h-2.5 flex-1" aria-hidden />
+      </div>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl font-medium tracking-tight">{title}</h1>
-          {description && <p className="mt-1 text-sm text-fg-3">{description}</p>}
+          <h1 className="text-[22px] leading-tight font-medium tracking-tight">{title}</h1>
+          {description && <p className="mt-1.5 max-w-2xl text-sm text-fg-3">{description}</p>}
         </div>
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </div>
       {children}
     </div>
+  );
+}
+
+/** Tiny line chart for metric strips. */
+export function Sparkline({ values, className, height = 22 }: { values: number[]; className?: string; height?: number }) {
+  if (values.length < 2) return null;
+  const max = Math.max(1, ...values);
+  const w = 100;
+  const pts = values.map((v, i) => `${(i / (values.length - 1)) * w},${height - 2 - (v / max) * (height - 4)}`);
+  return (
+    <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className={cx("w-full overflow-visible", className)} style={{ height }} aria-hidden>
+      <polyline points={`0,${height} ${pts.join(" ")} ${w},${height}`} fill="var(--hover)" stroke="none" />
+      <polyline points={pts.join(" ")} fill="none" stroke="var(--fg-3)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+      <circle cx={pts.at(-1)!.split(",")[0]} cy={pts.at(-1)!.split(",")[1]} r={1.6} fill="var(--fg)" vectorEffect="non-scaling-stroke" />
+    </svg>
   );
 }
 

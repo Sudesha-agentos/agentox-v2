@@ -40,7 +40,7 @@ function LiveRunPanel({ cid, runId, agent }: { cid: string; runId: string; agent
   const last = events.data?.filter((e) => e.stream !== "system").at(-1)?.message;
   return (
     <Panel className="overflow-hidden border-line-3">
-      <div className="flex flex-wrap items-center gap-2.5 border-b border-line px-3.5 py-2.5">
+      <div className="sweep flex flex-wrap items-center gap-2.5 border-b border-line px-3.5 py-2.5">
         <StatusGlyph kind={run.data?.status === "queued" ? "queued" : "live"} />
         <span className="text-sm font-medium">{agent?.name ?? "Agent"} {run.data?.status === "queued" ? "is about to start" : "is working on this"}</span>
         <Chip icon={<Clock />}>{run.data?.status === "queued" ? "queued" : duration(run.data?.startedAt)}</Chip>

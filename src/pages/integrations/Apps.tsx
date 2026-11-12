@@ -1,14 +1,17 @@
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Search } from "lucide-react";
-import { api, isDemoMode } from "@/api/client";
+import { api } from "@/api/client";
 import { keys, useAction, useToolConnections, useToolGallery } from "@/api/hooks";
-import type { ToolConnection } from "@/api/types";
+import type { AppField, AppMethod, ConnectAppResult, ToolApp, ToolConnection } from "@/api/types";
 import { toast, toastError } from "@/lib/toast";
-import { Avatar, Button, Empty, ErrorBox, Input, Panel, SkeletonRows, Status, cx, type Glyph } from "@/components/ui";
+import { titleCase } from "@/lib/format";
+import { Avatar, Button, Checkbox, Empty, ErrorBox, Field, Input, Modal, Panel, SkeletonRows, Status, Textarea, cx, type Glyph } from "@/components/ui";
 
 const health = (c: ToolConnection): { glyph: Glyph; label: string } =>
-  c.requiresReauthorization
+  c.status === "draft"
+    ? { glyph: "queued", label: "Setup incomplete" }
+    : c.requiresReauthorization
     ? { glyph: "error", label: "Reauthorize" }
     : c.healthStatus === "healthy"
       ? { glyph: "ok", label: "Healthy" }
@@ -25,6 +28,7 @@ export function AppsTab({ cid }: { cid: string }) {
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("All");
   const [connecting, setConnecting] = useState<string | null>(null);
+  const [form, setForm] = useState<ToolApp | null>(null);
   const check = useAction((id: string) => api.post(`/tool-connections/${id}/health-check`, {}), { invalidate: () => [keys.toolConnections(cid)], success: "Connection is healthy" });
   const disconnect = useAction((id: string) => api.del(`/tool-connections/${id}`), { invalidate: () => [keys.toolConnections(cid)], success: "Disconnected" });
   const list = conns.data ?? [];
@@ -36,20 +40,21 @@ export function AppsTab({ cid }: { cid: string }) {
     (a) => !connectedSlugs.has(a.slug) && (cat === "All" || a.categories?.includes(cat)) && (!needle || a.name.toLowerCase().includes(needle) || a.description?.toLowerCase().includes(needle)),
   );
 
-  const connect = async (slug: string, name: string) => {
-    setConnecting(slug);
+  const needsForm = (app: ToolApp) => {
+    const methods = app.methods ?? [];
+    if (methods.length > 1) return true;
+    const m = methods[0];
+    return !!m && [...(m.credentialFields ?? []), ...(m.tenantFields ?? [])].some((f) => !f.hidden);
+  };
+
+  const quickConnect = async (app: ToolApp) => {
+    setConnecting(app.slug);
     try {
-      const res = await api.post<{ connection?: ToolConnection; id?: string; authorizeUrl?: string; url?: string }>(`/companies/${cid}/tools/apps/connect`, { galleryKey: slug, name });
-      const direct = res.authorizeUrl ?? res.url;
-      if (direct) return void (window.location.href = direct);
-      const conn = res.connection ?? (res.id ? ({ id: res.id } as ToolConnection) : null);
-      if (conn?.authKind === "oauth" && !isDemoMode()) {
-        const start = await api.post<{ authorizeUrl?: string; url?: string; redirectUrl?: string }>(`/tools/oauth/${conn.id}/start`, {});
-        const to = start.authorizeUrl ?? start.url ?? start.redirectUrl;
-        if (to) return void (window.location.href = to);
+      const done = await connectApp(cid, app, app.methods?.[0], {}, {});
+      if (done === "connected") {
+        toast(`${app.name} connected. Agents can use it on their next run`);
+        qc.invalidateQueries({ queryKey: keys.toolConnections(cid) });
       }
-      toast(`${name} connected. Agents can use it on their next run`);
-      qc.invalidateQueries({ queryKey: keys.toolConnections(cid) });
     } catch (e) {
       toastError(e);
     } finally {
@@ -117,7 +122,7 @@ export function AppsTab({ cid }: { cid: string }) {
           <div className="flex flex-wrap gap-1">
             {categories.map((c) => (
               <button key={c} onClick={() => setCat(c)} className={cx("h-6 rounded-xs border px-2 text-xs transition-colors", cat === c ? "border-fg bg-active text-fg" : "border-line-2 text-fg-3 hover:text-fg")}>
-                {c}
+                {titleCase(c)}
               </button>
             ))}
           </div>
@@ -140,18 +145,173 @@ export function AppsTab({ cid }: { cid: string }) {
                   <Avatar name={app.name} size={26} />
                   <div className="min-w-0">
                     <div className="truncate text-sm">{app.name}</div>
-                    <div className="mono truncate text-2xs text-fg-4">{app.categories?.[0] ?? app.slug}</div>
+                    <div className="mono truncate text-2xs text-fg-4">{titleCase(app.categories?.[0] ?? app.slug)}</div>
                   </div>
                 </div>
                 <p className="mt-2.5 line-clamp-2 min-h-8 flex-1 text-xs text-fg-3">{app.description}</p>
-                <Button size="xs" className="mt-3 w-fit" loading={connecting === app.slug} onClick={() => connect(app.slug, app.name)}>
-                  Connect
-                </Button>
+                {unavailable(app) ? (
+                  <span className="mt-3 text-xs text-fg-4">{unavailable(app)}</span>
+                ) : (
+                  <Button size="xs" className="mt-3 w-fit" loading={connecting === app.slug} onClick={() => (needsForm(app) ? setForm(app) : quickConnect(app))}>
+                    Connect
+                  </Button>
+                )}
               </div>
             ))}
           </div>
         )}
       </section>
+      {form && <ConnectAppModal key={form.slug} app={form} cid={cid} onClose={() => setForm(null)} />}
     </div>
+  );
+}
+
+const unavailable = (app: ToolApp): string | null => {
+  const a = app.availability;
+  if (a && typeof a === "object" && a.available === false) return a.reason ?? "Not available on this server";
+  return null;
+};
+
+/**
+ * Connect, then finish setup for the whole workspace. OAuth apps leave for the provider's
+ * consent page; the server finishes the connection when the provider redirects back.
+ * Read-only actions are allowed; anything that makes changes asks an operator first.
+ */
+async function connectApp(cid: string, app: ToolApp, method: AppMethod | undefined, credentialValues: Record<string, string>, configValues: Record<string, unknown>): Promise<"connected" | "redirecting"> {
+  const res = await api.post<ConnectAppResult>(`/companies/${cid}/tools/apps/connect`, {
+    galleryKey: app.slug,
+    ...(method ? { connectionMethodKey: method.key } : {}),
+    name: app.name,
+    ...(Object.keys(credentialValues).length ? { credentialValues } : {}),
+    ...(Object.keys(configValues).length ? { configValues } : {}),
+  });
+  if (res.auth?.kind === "oauth") {
+    if (res.auth.startUrl) {
+      window.location.href = res.auth.startUrl;
+      return "redirecting";
+    }
+    if (res.auth.manualClientRequired) throw new Error(`${app.name} needs a manually registered OAuth client. Set it up from the server's admin tools, then connect again.`);
+  }
+  await api.post(`/companies/${cid}/tools/apps/${res.connectionId}/finish`, {
+    access: "all_agents",
+    enabledCatalogEntryIds: (res.actions?.readOnly ?? []).map((a) => a.catalogEntryId),
+    askFirstCatalogEntryIds: (res.actions?.canMakeChanges ?? []).map((a) => a.catalogEntryId),
+  });
+  return "connected";
+}
+
+function ConnectAppModal({ app, cid, onClose }: { app: ToolApp; cid: string; onClose: () => void }) {
+  const qc = useQueryClient();
+  const methods = app.methods ?? [];
+  const [methodKey, setMethodKey] = useState(methods[0]?.key ?? "");
+  const method = methods.find((m) => m.key === methodKey);
+  const [values, setValues] = useState<Record<string, string | boolean>>({});
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const tenant = (method?.tenantFields ?? []).filter((f) => !f.hidden);
+  const creds = (method?.credentialFields ?? []).filter((f) => !f.hidden);
+  const fields = [...tenant, ...creds];
+  const visible = fields.filter((f) => !f.advanced || showAdvanced);
+  const missing = fields.filter((f) => f.required && (values[f.key] === undefined || values[f.key] === ""));
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const pick = (list: AppField[]) => Object.fromEntries(list.filter((f) => values[f.key] !== undefined && values[f.key] !== "").map((f) => [f.key, values[f.key]]));
+      const result = await connectApp(cid, app, method, pick(creds) as Record<string, string>, pick(tenant));
+      if (result === "connected") {
+        toast(`${app.name} connected. Agents can use it on their next run`);
+        qc.invalidateQueries({ queryKey: keys.toolConnections(cid) });
+        onClose();
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Connect ${app.name}`}
+      description={method?.auth === "oauth" ? "You'll sign in with the provider, then return here." : "Credentials are encrypted and never shown again."}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" loading={busy} disabled={missing.length > 0} onClick={submit}>
+            {method?.auth === "oauth" ? `Continue to ${app.name}` : "Connect"}
+          </Button>
+        </>
+      }
+    >
+      {app.setupPrerequisite && (
+        <div className="rounded-sm border border-line-2 bg-raised px-3 py-2.5 text-sm">
+          <div className="font-medium">{app.setupPrerequisite.title}</div>
+          <p className="mt-0.5 text-xs text-fg-3">{app.setupPrerequisite.description}</p>
+          <a href={app.setupPrerequisite.actionUrl} target="_blank" rel="noreferrer" className="mt-1.5 inline-block text-xs text-fg underline underline-offset-4">
+            {app.setupPrerequisite.actionLabel}
+          </a>
+        </div>
+      )}
+      {methods.length > 1 && (
+        <Field label="Connect with">
+          <div className="space-y-1.5" role="radiogroup">
+            {methods.map((m) => (
+              <button
+                key={m.key}
+                type="button"
+                role="radio"
+                aria-checked={m.key === methodKey}
+                onClick={() => setMethodKey(m.key)}
+                className={cx("w-full rounded-sm border px-3 py-2 text-left", m.key === methodKey ? "border-fg bg-active" : "border-line-2 hover:border-line-3")}
+              >
+                <div className="text-sm">{m.label ?? (m.auth === "oauth" ? "Sign in with OAuth" : m.auth === "api_key" ? "API key" : "No authentication")}</div>
+                {m.whenToUse && <div className="mt-0.5 text-xs text-fg-3">{m.whenToUse}</div>}
+              </button>
+            ))}
+          </div>
+        </Field>
+      )}
+      {visible.map((f) => (
+        <Field key={f.key} label={`${f.label}${f.required ? "" : " (optional)"}`} hint={f.helperMd?.replace(/[*_`]/g, "")}>
+          {f.type === "textarea" ? (
+            <Textarea rows={3} value={String(values[f.key] ?? "")} placeholder={f.placeholder} onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))} className={f.secret ? "mono text-xs" : undefined} />
+          ) : f.type === "checkbox" ? (
+            <Checkbox checked={Boolean(values[f.key] ?? f.defaultValue)} onChange={(c) => setValues((v) => ({ ...v, [f.key]: c }))} label={f.label} />
+          ) : (
+            <Input
+              type={f.type === "password" || f.secret ? "password" : "text"}
+              autoComplete="off"
+              value={String(values[f.key] ?? "")}
+              placeholder={f.placeholder}
+              onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+              className={f.secret || f.type === "password" ? "mono text-xs" : undefined}
+            />
+          )}
+        </Field>
+      ))}
+      {fields.some((f) => f.advanced) && (
+        <button type="button" onClick={() => setShowAdvanced((a) => !a)} className="text-xs text-fg-3 hover:text-fg">
+          {showAdvanced ? "Hide advanced settings" : "Show advanced settings"}
+        </button>
+      )}
+      {method?.consoleLinks?.keys && (
+        <a href={method.consoleLinks.keys} target="_blank" rel="noreferrer" className="block text-xs text-fg-3 underline underline-offset-4 hover:text-fg">
+          Where do I find this key?
+        </a>
+      )}
+      {error && (
+        <div role="alert" className="flex items-start gap-2.5 rounded-sm border border-line-3 bg-raised px-3 py-2.5 text-sm">
+          <span className="mt-1.5 size-1.5 shrink-0 rotate-45 bg-fg" />
+          {error}
+        </div>
+      )}
+    </Modal>
   );
 }

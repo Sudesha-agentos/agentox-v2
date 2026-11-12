@@ -1,0 +1,301 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  agentox on a single free-tier EC2 instance. Caddy serves the interface and terminates TLS,
+  the engine runs behind it on localhost with its embedded database, secrets live in
+  SSM Parameter Store, and nightly backups go to S3. No load balancer, NAT gateway, RDS or
+  Secrets Manager, so nothing here is billed outside free-tier eligible services.
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t4g.small
+    AllowedValues: [t4g.micro, t4g.small, t4g.medium]
+    Description: Graviton (arm64) instance size. t4g.small has 2 GB of memory.
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+    Description: Latest Amazon Linux 2023 for arm64, resolved at deploy time.
+  VolumeSizeGiB:
+    Type: Number
+    Default: 30
+    MinValue: 20
+    MaxValue: 100
+    Description: Root disk for the engine, worktrees, agent homes and local backups.
+  AlertEmail:
+    Type: String
+    Description: Address for instance health alerts. AWS sends a confirmation email first.
+  AppDomain:
+    Type: String
+    Default: app.agentox.io
+    AllowedPattern: "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$"
+    Description: Hostname for the app. Point an A record at the PublicIp output; Caddy then gets its certificate.
+  MailDomain:
+    Type: String
+    Default: agentox.io
+    AllowedPattern: "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$"
+    Description: Domain that verification and access-request emails are sent from (no-reply@MailDomain).
+
+Resources:
+  # ------------------------------------------------------------------ storage
+  BackupBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-backups
+            Status: Enabled
+            Prefix: backups/
+            ExpirationInDays: 30
+          - Id: expire-releases
+            Status: Enabled
+            Prefix: releases/
+            ExpirationInDays: 90
+      Tags:
+        - { Key: project, Value: agentox }
+
+  BackupBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BackupBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt BackupBucket.Arn
+              - !Sub "${BackupBucket.Arn}/*"
+            Condition:
+              Bool: { aws:SecureTransport: "false" }
+
+  # ---------------------------------------------------------------- identity
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # Session Manager and Run Command, so the instance never needs SSH.
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: agentox-least-privilege
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: BackupsAndReleases
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
+                Resource: !Sub "${BackupBucket.Arn}/*"
+              - Sid: ListOwnBucket
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt BackupBucket.Arn
+              - Sid: OwnParameters
+                Effect: Allow
+                Action: [ssm:GetParameter, ssm:GetParameters, ssm:PutParameter]
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/agentox/*"
+              - Sid: SecureStringViaSsmOnly
+                Effect: Allow
+                Action: [kms:Decrypt, kms:Encrypt, kms:GenerateDataKey]
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub "ssm.${AWS::Region}.amazonaws.com"
+              - Sid: OwnLogs
+                Effect: Allow
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents, logs:DescribeLogStreams]
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/agentox/*"
+              - Sid: SendMailFromOwnDomain
+                Effect: Allow
+                Action: ses:SendEmail
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    ses:FromAddress: !Sub "no-reply@${MailDomain}"
+      Tags:
+        - { Key: project, Value: agentox }
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref InstanceRole]
+
+  # ----------------------------------------------------------------- network
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: agentox web traffic only. No SSH; use Session Manager.
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0, Description: HTTP for certificate issuance and redirect }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0, Description: HTTPS }
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIpv6: "::/0", Description: HTTP over IPv6 }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIpv6: "::/0", Description: HTTPS over IPv6 }
+      Tags:
+        - { Key: Name, Value: agentox-web }
+        - { Key: project, Value: agentox }
+
+  # ---------------------------------------------------------------- compute
+  Server:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref AmiId
+      IamInstanceProfile: !Ref InstanceProfile
+      SecurityGroupIds: [!GetAtt WebSecurityGroup.GroupId]
+      MetadataOptions:
+        HttpTokens: required
+        HttpEndpoint: enabled
+        HttpPutResponseHopLimit: 1
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: !Ref VolumeSizeGiB
+            Encrypted: true
+            DeleteOnTermination: true
+      CreditSpecification:
+        CPUCredits: standard
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          # Base layer only. The app itself is installed by infra/deploy.sh through Run Command.
+          set -euxo pipefail
+          exec > >(tee -a /var/log/agentox-bootstrap.log) 2>&1
+
+          dnf -y upgrade --refresh || true
+          dnf -y install git tar xz gzip jq cronie
+          dnf -y install bubblewrap || echo "bubblewrap unavailable; agent sandboxing will be off"
+
+          # 2 GB swap so the engine, its database and one agent fit on a small instance.
+          if [ ! -f /swapfile ]; then
+            fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile
+            echo "/swapfile none swap sw 0 0" >> /etc/fstab
+          fi
+          swapon -a || true
+          sysctl -w vm.swappiness=20 && echo "vm.swappiness=20" > /etc/sysctl.d/90-agentox.conf
+
+          # Node 24 (latest patch), verified against the official checksums.
+          cd /tmp
+          base=https://nodejs.org/dist/latest-v24.x
+          curl -fsSLO "$base/SHASUMS256.txt"
+          file=$(grep -oE 'node-v24\.[0-9]+\.[0-9]+-linux-arm64\.tar\.xz' SHASUMS256.txt | head -1)
+          curl -fsSLO "$base/$file"
+          grep " $file\$" SHASUMS256.txt | sha256sum -c -
+          mkdir -p /opt/node && tar -xJf "$file" -C /opt/node --strip-components=1
+          ln -sf /opt/node/bin/node /usr/local/bin/node
+          ln -sf /opt/node/bin/npm /usr/local/bin/npm
+          ln -sf /opt/node/bin/npx /usr/local/bin/npx
+
+          # Caddy for TLS and static files, run as its own user with permission to bind 80/443.
+          curl -fsSL "https://caddyserver.com/api/download?os=linux&arch=arm64" -o /usr/local/bin/caddy
+          chmod 755 /usr/local/bin/caddy
+          id caddy >/dev/null 2>&1 || useradd --system --home /var/lib/caddy --create-home --shell /sbin/nologin caddy
+
+          # The engine runs as an unprivileged user; agents inherit it.
+          id agentox >/dev/null 2>&1 || useradd --system --home /home/agentox --create-home --shell /bin/bash agentox
+          mkdir -p /opt/agentox/releases /var/lib/agentox /etc/agentox /opt/agentox/npm
+          chown -R agentox:agentox /var/lib/agentox /opt/agentox/npm
+          sudo -u agentox npm config set prefix /opt/agentox/npm
+          sudo -u agentox -H bash -lc 'PATH=/opt/agentox/npm/bin:/usr/local/bin:$PATH npm install -g @anthropic-ai/claude-code' || echo "claude code install deferred"
+
+          echo "bootstrap complete" > /var/lib/agentox/bootstrap.done
+      Tags:
+        - { Key: Name, Value: agentox }
+        - { Key: project, Value: agentox }
+
+  # A stable public address, so the HTTPS hostname survives restarts.
+  PublicAddress:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref Server
+      Tags:
+        - { Key: project, Value: agentox }
+
+  # -------------------------------------------------------------------- email
+  # Verification codes and access-request notices. Easy DKIM: three CNAME records go into DNS
+  # (infra/dns.sh ses-dkim). New SES accounts start in the sandbox until production access is granted.
+  MailIdentity:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: !Ref MailDomain
+
+  # -------------------------------------------------------------- operations
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: agentox-alerts
+      Subscription:
+        - { Protocol: email, Endpoint: !Ref AlertEmail }
+
+  SystemCheckAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: AWS hardware problem. Recover the instance onto healthy hardware.
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed_System
+      Dimensions: [{ Name: InstanceId, Value: !Ref Server }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Sub "arn:aws:automate:${AWS::Region}:ec2:recover"
+        - !Ref AlertTopic
+
+  InstanceCheckAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: The instance stopped responding. Reboot it.
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed_Instance
+      Dimensions: [{ Name: InstanceId, Value: !Ref Server }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Sub "arn:aws:automate:${AWS::Region}:ec2:reboot"
+        - !Ref AlertTopic
+
+Outputs:
+  InstanceId:
+    Value: !Ref Server
+  PublicIp:
+    Value: !Ref PublicAddress
+  AppHost:
+    Description: The app's hostname. Its DNS A record must point at PublicIp.
+    Value: !Ref AppDomain
+  BackupBucket:
+    Value: !Ref BackupBucket
+  MailDomain:
+    Value: !Ref MailDomain
+  DkimRecords:
+    Description: CNAME name=value pairs for SES Easy DKIM; infra/dns.sh ses-dkim adds them.
+    Value: !Join
+      - " "
+      - - !Join ["=", [!GetAtt MailIdentity.DkimDNSTokenName1, !GetAtt MailIdentity.DkimDNSTokenValue1]]
+        - !Join ["=", [!GetAtt MailIdentity.DkimDNSTokenName2, !GetAtt MailIdentity.DkimDNSTokenValue2]]
+        - !Join ["=", [!GetAtt MailIdentity.DkimDNSTokenName3, !GetAtt MailIdentity.DkimDNSTokenValue3]]

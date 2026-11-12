@@ -271,6 +271,8 @@ export interface Member {
   role?: string | null;
   membershipRole?: string | null;
   principalType?: string;
+  principalId?: string | null;
+  status?: string;
   user?: { id: string; name?: string | null; email?: string | null } | null;
   createdAt?: string;
 }
@@ -332,12 +334,48 @@ export interface AiConnectionsResponse {
   connections: AiConnection[];
 }
 
+export interface AppField {
+  key: string;
+  label: string;
+  type: "text" | "password" | "textarea" | "datetime" | "select" | "checkbox";
+  required?: boolean;
+  advanced?: boolean;
+  hidden?: boolean;
+  placeholder?: string;
+  helperMd?: string;
+  secret?: boolean;
+  defaultValue?: string | boolean;
+}
+
+/** One way to connect an app (OAuth, API key, or no auth). */
+export interface AppMethod {
+  key: string;
+  label?: string;
+  auth: "oauth" | "api_key" | "none";
+  whenToUse?: string;
+  credentialFields?: AppField[];
+  tenantFields?: AppField[];
+  consoleLinks?: { keys?: string; register?: string; docs?: string };
+}
+
 export interface ToolApp {
   slug: string;
   name: string;
   description?: string | null;
   categories?: string[];
-  availability?: string;
+  methods?: AppMethod[];
+  availability?: { available: boolean; reason?: string } | string;
+  setupPrerequisite?: { title: string; description: string; actionLabel: string; actionUrl: string };
+}
+
+export interface ConnectAppResult {
+  connectionId: string;
+  connection: ToolConnection;
+  actions?: {
+    readOnly: Array<{ catalogEntryId: string }>;
+    canMakeChanges: Array<{ catalogEntryId: string }>;
+  };
+  auth?: { kind: "oauth"; startUrl: string | null; manualClientRequired?: boolean } | null;
 }
 
 export interface ToolConnection {

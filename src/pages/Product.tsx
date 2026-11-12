@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { ArrowRight, Check, Clock, Copy, Plus } from "lucide-react";
-import { setDemoMode } from "@/api/client";
 import { Reveal, scrollToId, useScrollProgress, useSmoothScroll } from "@/lib/motion";
+import { appHref } from "@/lib/hosts";
+import { SmartLink } from "@/components/SmartLink";
 import { toast } from "@/lib/toast";
 import { Avatar, Chip, Mark, Status, StatusGlyph, cx } from "@/components/ui";
 import { IssueStatusIcon } from "@/components/status";
@@ -42,7 +43,7 @@ const FAQ: Array<[string, string]> = [
   ["Which agents can I run?", "Any runtime the agentox server supports, including Claude Code, Codex, Cursor, Gemini CLI, OpenCode, OpenClaw and Hermes, as well as custom processes and HTTP endpoints."],
   ["Where does my data live?", "On your agentox server. The interface talks to it directly from the browser and keeps no copy of your code, prompts, transcripts or credentials."],
   ["Do my agents need to change?", "No. Agents keep their runtime, model and tools. agentox adds assignment, oversight and review on top of what they already do."],
-  ["Can I try it without setting anything up?", "Yes. The demo runs entirely in your browser with a sample company of six agents. Nothing is sent anywhere."],
+  ["How long does setup take?", "A few minutes. Run one command to start the server, create your account, hire your first agent and assign it a task."],
 ];
 
 /* --------------------------------------------------------- primitives */
@@ -68,9 +69,9 @@ function Btn({ children, onClick, primary, to, size = "md" }: { children: ReactN
     primary ? "bg-inv text-inv-fg hover:opacity-85" : "border border-line-3 text-fg hover:border-fg-3 hover:bg-hover",
   );
   return to ? (
-    <Link to={to} className={cls}>
+    <SmartLink href={appHref(to)} className={cls}>
       {children}
-    </Link>
+    </SmartLink>
   ) : (
     <button onClick={onClick} className={cls}>
       {children}
@@ -347,7 +348,7 @@ function GovernVisual() {
     <Frame title="members">
       <div className="divide-y divide-line">
         {[
-          ["Demo Operator", "Owner", "you"],
+          ["Avery Chen", "Owner", "you"],
           ["Priya Shah", "Admin", ""],
           ["Sam Lee", "Operator", ""],
           ["Audit team", "Viewer", ""],
@@ -416,7 +417,6 @@ function FaqItem({ q, a }: { q: string; a: string }) {
 
 export function ProductPage() {
   useSmoothScroll();
-  const navigate = useNavigate();
   const [heroRef, heroP] = useScrollProgress<HTMLDivElement>();
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
@@ -432,10 +432,6 @@ export function ProductPage() {
     };
   }, []);
 
-  const demo = () => {
-    setDemoMode(true);
-    navigate("/login");
-  };
   const cmd = "npm run server";
 
   return (
@@ -469,11 +465,11 @@ export function ProductPage() {
             <button onClick={() => scrollToId("how")} className="hidden text-fg-2 hover:text-fg sm:block">
               Self-host
             </button>
-            <Link to="/login" className="text-fg-2 hover:text-fg">
+            <SmartLink href={appHref("/login")} className="text-fg-2 hover:text-fg">
               Sign in
-            </Link>
-            <Btn primary onClick={demo}>
-              Try the demo
+            </SmartLink>
+            <Btn primary to="/signup">
+              Get started
             </Btn>
           </div>
         </div>
@@ -501,14 +497,14 @@ export function ProductPage() {
           </Reveal>
           <Reveal delay={280}>
             <div className="mt-10 flex flex-wrap items-center gap-3">
-              <Btn primary size="lg" onClick={demo}>
-                Explore the live demo <ArrowRight />
+              <Btn primary size="lg" to="/signup">
+                Get started <ArrowRight />
               </Btn>
               <Btn size="lg" to="/">
                 Open your workspace
               </Btn>
             </div>
-            <p className="mt-4 text-xs text-fg-4">No account needed for the demo. It runs entirely in your browser.</p>
+            <p className="mt-4 text-xs text-fg-4">Self-hosted. One command to start, on your own infrastructure.</p>
           </Reveal>
         </div>
 
@@ -706,8 +702,8 @@ export function ProductPage() {
           </Reveal>
           <Reveal delay={150}>
             <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-              <Btn primary size="lg" onClick={demo}>
-                Explore the live demo <ArrowRight />
+              <Btn primary size="lg" to="/signup">
+                Get started <ArrowRight />
               </Btn>
               <Btn size="lg" to="/">
                 Open your workspace
@@ -742,9 +738,9 @@ export function ProductPage() {
             <Link to="/design" className="block text-fg-2 hover:text-fg">
               Design system
             </Link>
-            <Link to="/login" className="block text-fg-2 hover:text-fg">
+            <SmartLink href={appHref("/login")} className="block text-fg-2 hover:text-fg">
               Sign in
-            </Link>
+            </SmartLink>
           </div>
         </div>
         <div className="mono mx-auto flex max-w-6xl flex-wrap justify-between gap-2 border-t border-line px-6 py-6 text-2xs text-fg-4">

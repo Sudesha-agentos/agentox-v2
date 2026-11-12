@@ -54,7 +54,7 @@ function LaneRow({ lane, cid, issues, selected, onSelect }: { lane: Lane; cid: s
   const { agent, current, queue, review } = lane;
   const task = current?.issueId ? issues.get(current.issueId) : undefined;
   return (
-    <button onClick={onSelect} className={cx("grid w-full grid-cols-[28px_1fr] gap-x-3 border-b border-line px-3.5 py-3 text-left transition-colors sm:grid-cols-[28px_150px_1fr]", selected ? "bg-active" : "hover:bg-hover")}>
+    <button onClick={onSelect} className={cx("grid w-full grid-cols-[28px_1fr] gap-x-3 border-b border-line px-3.5 py-3 text-left transition-colors sm:grid-cols-[28px_150px_1fr]", selected ? "bg-active" : "hover:bg-hover", current?.status === "running" && "sweep")}>
       <Avatar name={agent.name} size={28} />
       <div className="min-w-0">
         <div className="truncate text-sm">{agent.name}</div>
@@ -227,7 +227,8 @@ function Feed({ agents, runs, issues }: { agents: Map<string, Agent>; runs: Map<
       case "activity.logged": {
         const d = (p.details ?? {}) as Record<string, unknown>;
         const who = p.agentId ? name(p.agentId) : p.actorType === "user" ? "You" : "System";
-        const title = typeof d.title === "string" ? `“${d.title}”` : "";
+        const named = [d.title, d.issueTitle, d.identifier].find((v): v is string => typeof v === "string");
+        const title = named ? `“${named}”` : "a task";
         if (p.action === "issue.comment_added") return `${who} commented on ${title}`;
         if (p.action === "issue.created") return `${who} created ${title}`;
         if (p.action === "issue.updated" && typeof d.status === "string") return `${who} moved ${title} to ${d.status.replace(/_/g, " ")}`;
@@ -298,9 +299,14 @@ export function LivePage() {
 
   return (
     <div className="flex flex-col lg:h-[calc(100vh-44px-48px)] lg:min-h-[560px]">
+      <div className="mono mb-3 flex items-center gap-3 text-2xs tracking-wider text-fg-4 uppercase">
+        <span className="text-fg-3">02</span>
+        <span>Live</span>
+        <span className="halftone h-2.5 flex-1" aria-hidden />
+      </div>
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-medium tracking-tight">Live</h1>
+          <h1 className="text-[22px] font-medium tracking-tight">Live</h1>
           <p className="mt-1 text-sm text-fg-3">What every agent is doing right now, what's next, and what's waiting on you.</p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">

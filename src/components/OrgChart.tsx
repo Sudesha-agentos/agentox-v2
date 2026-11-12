@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Maximize2, Minus, Plus } from "lucide-react";
 import type { Agent, HeartbeatRun, Issue } from "@/api/types";
 import { cents, roleLabel } from "@/lib/format";
-import { Avatar, IconButton, StatusGlyph, cx } from "./ui";
+import { Avatar, IconButton, Meter, StatusGlyph, cx } from "./ui";
 import { agentStatusMeta, isActiveRun } from "./status";
 
 /*
@@ -237,7 +237,6 @@ export function OrgChart({ agents, cid, openTasks, liveRuns, issues, totalReport
             const reports = childCount.get(a.id) ?? 0;
             const dim = lit && !lit.has(a.id);
             const meta = agentStatusMeta[a.status];
-            const pct = a.budgetMonthlyCents ? Math.min(100, (a.spentMonthlyCents / a.budgetMonthlyCents) * 100) : 0;
             return (
               <div key={a.id} className="absolute" style={{ left: n.x, top: n.y, width: W }}>
                 <div
@@ -287,9 +286,7 @@ export function OrgChart({ agents, cid, openTasks, liveRuns, issues, totalReport
                       </div>
                     )}
                     <div className="mt-1.5 flex items-center gap-2">
-                      <span className="h-[3px] flex-1 overflow-hidden rounded-full bg-line-2">
-                        <span className={cx("block h-full", pct >= 90 ? "bg-fg" : "bg-fg-3")} style={{ width: `${pct}%` }} />
-                      </span>
+                      <Meter value={a.spentMonthlyCents} max={a.budgetMonthlyCents} segments={18} className="h-1 flex-1" />
                       <span className="mono text-[9.5px] text-fg-4 tnum">{cents(a.spentMonthlyCents)}</span>
                     </div>
                   </div>
